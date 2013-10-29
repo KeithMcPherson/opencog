@@ -91,6 +91,7 @@ g.add_atom = function(data,textStatus,XMLHttpRequest,depth,source,handle) {
 
 g.add_root = function(data,textStatus,XMLHttpRequest) {
     console.log( "Loading focus " + data.handle );
+    console.log(data);
     // Handle adding root node and retrieving incoming/outgoing links
     g.add_atom(data,textStatus,XMLHttpRequest,0,undefined,undefined);
     g.nodes[data.handle].x = p.width/2;

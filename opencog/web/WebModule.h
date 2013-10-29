@@ -36,8 +36,11 @@
 #include <opencog/web/ListURLHandler.h>
 #include <opencog/web/AtomURLHandler.h>
 #include <opencog/web/ServerRequestWrapper.h>
+#include <opencog/web/GetConfigRequest.h>
+#include <opencog/web/ConfigURLHandler.h>
 
-#define REST_PATH_PREFIX "/rest/0.2"
+
+#define REST_PATH_PREFIX "/rest/0.3"
 #define UI_PATH_PREFIX "/opencog"
 
 namespace opencog
@@ -63,6 +66,8 @@ private:
     Factory<GetAtomRequest, Request> getAtomFactory;
     Factory<CreateAtomRequest, Request> createAtomFactory;
     Factory<UpdateAtomRequest, Request> updateAtomFactory;
+    Factory<GetConfigRequest, Request> getConfigFactory;
+
 
     std::string serverAddress;
 
@@ -124,6 +129,9 @@ return(const_cast<char *>("</body></html>\r\n"));
 
     // Class that handles /list/* requests
     ListURLHandler listURLHandler;
+
+    // Class that handles /server/config requests
+    ConfigURLHandler configURLHandler;
 
     // Handle neighborhood requests
     //NeighborhoodURLHandler neighborhoodURLHandler;

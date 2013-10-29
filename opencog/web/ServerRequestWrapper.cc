@@ -150,8 +150,20 @@ void ServerRequestWrapper::OnRequestComplete() {
         boost::replace_all(nodoublequotes, "\"", "\'");
         result.str("");
         result << "{\"result\":\"";
+        //control characters aren't allowed in json, must be escaped
+        boost::replace_all(nodoublequotes, "\n", "\\n");
+        boost::replace_all(nodoublequotes, "\t", "\\t");
+        boost::replace_all(nodoublequotes, "\r", "\\n");
+
+        //@todo parse out color formatting instead of just esc
+        std::stringstream ssESC;
+        char ESC = ((char) 27);
+        ssESC << ESC;
+        boost::replace_all(nodoublequotes, ssESC.str(), " ");
+
+
         result << nodoublequotes;
-        result << "\"}" << std::endl;
+        result << "\"}";
     } else {
         result << WebModule::openHtmlHeader();
         result << WebModule::closeHtmlHeader();

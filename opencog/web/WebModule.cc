@@ -67,6 +67,7 @@ WebModule::WebModule() : _port(DEFAULT_PORT), serverAddress(DEFAULT_SERVER_ADDRE
     cogserver.registerRequest(GetListRequest::info().id, &getListFactory); 
     cogserver.registerRequest(CreateAtomRequest::info().id, &createAtomFactory); 
     cogserver.registerRequest(UpdateAtomRequest::info().id, &updateAtomFactory); 
+    cogserver.registerRequest(GetConfigRequest::info().id, &getConfigFactory);
 
     timeout = 100;
 }
@@ -127,6 +128,8 @@ void viewListPage( struct mg_connection *conn,
         const struct mg_request_info *ri, void *data);
 void makeRequest( struct mg_connection *conn,
         const struct mg_request_info *ri, void *data);
+void viewConfigPage( struct mg_connection *conn,
+        const struct mg_request_info *ri, void *data);
 
 void WebModule::setupURIs()
 {
@@ -142,6 +145,8 @@ void WebModule::setupURIsForUI()
     mg_set_uri_callback(ctx, UI_PATH_PREFIX "/list/*", viewListPage, NULL);
     mg_set_uri_callback(ctx, UI_PATH_PREFIX "/list", viewListPage, NULL);
     mg_set_uri_callback(ctx, UI_PATH_PREFIX "/server/request/*", makeRequest, NULL);
+    mg_set_uri_callback(ctx, UI_PATH_PREFIX "/server/config", viewConfigPage, NULL);
+
 }
 
 void WebModule::setupURIsForREST()
@@ -160,6 +165,8 @@ void WebModule::setupURIsForREST()
             rest_str);
     // server/request/request_name, POST
     mg_set_uri_callback(ctx, REST_PATH_PREFIX "/server/request/*", makeRequest,
+            rest_str);
+    mg_set_uri_callback(ctx, REST_PATH_PREFIX "/server/config", viewConfigPage,
             rest_str);
 }
 
@@ -205,6 +212,15 @@ void makeRequest ( struct mg_connection *conn,
         const struct mg_request_info *ri, void *data)
 { 
     ServerRequestWrapper *handler = new ServerRequestWrapper();
+    handler->handleRequest(conn, ri, data);
+    while (!handler->completed) {usleep(50);};
+    delete handler;
+}
+
+void viewConfigPage ( struct mg_connection *conn,
+        const struct mg_request_info *ri, void *data)
+{
+    ConfigURLHandler *handler = new ConfigURLHandler();
     handler->handleRequest(conn, ri, data);
     while (!handler->completed) {usleep(50);};
     delete handler;

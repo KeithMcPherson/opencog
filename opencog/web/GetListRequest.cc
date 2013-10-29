@@ -203,12 +203,13 @@ bool GetListRequest::execute()
         //! @todo deal with refresh and unknown parameters
     }
     if (name != "" && type != NOTYPE) { // filter by name & type
-        as.getHandleSet
-            (std::back_inserter(_handles), type, name.c_str(), subtypes);
+        as.getHandleSet(std::back_inserter(_handles), type, name.c_str(), subtypes);
     } else if (name != "") {     // filter by name
         as.getHandleSet(std::back_inserter(_handles), ATOM, name.c_str(), true);
     } else if (type != NOTYPE) { // filter by type
         as.getHandleSet(std::back_inserter(_handles), type, subtypes);
+    } else { //@todo just return all of them, or some kind of root atom
+
     }
     if (order_by != "") {
         bool sortResult = sortHandles(_handles, order_by, descending);
@@ -217,8 +218,11 @@ bool GetListRequest::execute()
             return false;
         }
     }
-    if (output_format == json_format) json_makeOutput(_handles);
-    else html_makeOutput(_handles);
+    if (output_format == json_format) {
+	json_makeOutput(_handles);
+    } else {
+	html_makeOutput(_handles);
+    }
     send(_output.str()); // send output to RequestResult instance
     return true;
 }

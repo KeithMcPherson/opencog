@@ -13,6 +13,8 @@ ADD_LIBRARY (ocweb SHARED
     BaseURLHandler
     AtomURLHandler
     ListURLHandler
+    GetConfigRequest
+    ConfigURLHandler
     mongoose
     #RequestMapper
     #SimpleAtomSpaceMapper
