@@ -230,7 +230,9 @@ vertex negate_vertex(const vertex& v)
 {
     return negate_builtin(get_builtin(v));
 }
-builtin negate_builtin(builtin b) {
+
+builtin negate_builtin(builtin b)
+{
     if (b == id::logical_true)
         return id::logical_false;
     else if (b == id::logical_false)
@@ -239,7 +241,7 @@ builtin negate_builtin(builtin b) {
         std::stringstream ss;
         ss << b;
         OC_ASSERT(false,
-                  "builtin %s should be id::logical_true or id::logical_false",
+                  "builtin \"%s\" should be id::logical_true or id::logical_false",
                   ss.str().c_str());
         return builtin();
     }

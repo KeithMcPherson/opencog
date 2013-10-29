@@ -23,6 +23,7 @@
  */
 
 #include <memory>
+#include <opencog/util/oc_assert.h>
 #include "BaseServer.h"
 
 using namespace opencog;
@@ -61,6 +62,6 @@ AtomSpace& BaseServer::getAtomSpace()
 // create and return static singleton instance
 BaseServer& opencog::server(BaseServer* (*factoryFunction)())
 {
-    static std::auto_ptr<BaseServer> instance((*factoryFunction)());
+    static std::unique_ptr<BaseServer> instance((*factoryFunction)());
     return *instance;
 }

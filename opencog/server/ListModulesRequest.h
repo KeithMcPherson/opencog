@@ -5,11 +5,15 @@
 #include <string>
 #include <vector>
 
-#include <opencog/atomspace/types.h>
+#include <opencog/atomspace/Handle.h>
 #include <opencog/server/Request.h>
+#include <opencog/server/RequestClassInfo.h>
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class ListModulesRequest : public Request
 {
@@ -35,12 +39,13 @@ public:
         return _cci;
     }
 
-    ListModulesRequest();
+    ListModulesRequest(CogServer&);
     virtual ~ListModulesRequest();
     virtual bool execute(void);
     virtual bool isShell(void) {return info().is_shell;}
 };
 
+/** @}*/
 } // namespace
 
 #endif // _OPENCOG_LIST_MODULES_REQUEST_H

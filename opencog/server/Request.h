@@ -27,15 +27,19 @@
 #ifndef _OPENCOG_REQUEST_H
 #define _OPENCOG_REQUEST_H
 
-#include <string>
-#include <sstream>
 #include <list>
+#include <string>
 
 #include <opencog/server/Factory.h>
 #include <opencog/server/RequestResult.h>
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
+
+class CogServer;
 
 /**
  * The DECLARE_CMD_REQUEST macro provides a simple, easy-to-use interface
@@ -44,6 +48,7 @@ namespace opencog
  * processing system.
  *
  * To be clear: the basic design goals of these macros are:
+ *
  * 1) A module implementation that is isolated from the detailed inner
  *    guts and workings of the module loading mechanism. This allows
  *    changes to the module loading and command-request processing 
@@ -72,25 +77,26 @@ namespace opencog
  * shell prompt.
  *
  * Arguments:
- * mod_type:  Typename of the class that implements the module.
- * cmd_str:   The string name of the command
- * do_cmd:    Name of the method to call to run the command.
+ * - mod_type:Typename of the class that implements the module.
+ * - cmd_str: The string name of the command
+ * - do_cmd:  Name of the method to call to run the command.
  *            The signature of the method mus be as follows (see also
  *            exmple):
  *            std::string mod_type::do_cmd(Request *, std::list<std::string>)
  *            The first arg is the original request; most users will not
  *            need this. The second arg is the parsed command line,
  *            presented as a list of strings.
- * cmd_sum:   A short string to be printed as a command summary.
- * cmd_desc:  A long string describing the command in detail.
- * shell_cmd: A boolean value that indicates the command is for entering a
+ * - cmd_sum: A short string to be printed as a command summary.
+ * - cmd_desc:A long string describing the command in detail.
+ * - shell_cmd:A boolean value that indicates the command is for entering a
  *            shell.
- * hidden:    A boolean value that indicates the command is not listed
+ * - hidden:  A boolean value that indicates the command is not listed
  *            when 'help' is used to list commands.
  *
  *
  * Example usage:
  *
+ * @code
  * class MyModule: public Module {
  *    private:
  *        DECLARE_CMD_REQUEST(MyModule, "stir-fry", do_stirfry,
@@ -119,6 +125,7 @@ namespace opencog
  *
  *     return "Your meal is now ready to be eaten!";
  * }
+ * @endcode
  *
  * The above is all there's to it! Just register and unregister the 
  * commands with the command processing subsystem, implement the "do"
@@ -140,14 +147,14 @@ namespace opencog
                                                  hidden);             \
               return _cci;                                            \
     }                                                                 \
-    do_cmd##Request(void) {};                                         \
+    do_cmd##Request(CogServer& cs) : Request(cs) {};                  \
     virtual ~do_cmd##Request() {};                                    \
     virtual bool execute(void) {                                      \
         logger().debug("[" cmd_str " Request] execute");              \
         std::ostringstream oss;                                       \
                                                                       \
         mod_type* mod =                                               \
-            static_cast<mod_type *>(cogserver().getModule(            \
+            static_cast<mod_type *>(_cogserver.getModule(             \
                  "opencog::" #mod_type));                             \
                                                                       \
         std::string rs = mod->do_cmd(this, _parameters);              \
@@ -170,41 +177,13 @@ namespace opencog
                                                                       \
     /* Declare routines to register and unregister the factories */   \
     void do_cmd##_register(void) {                                    \
-        cogserver().registerRequest(do_cmd##Request::info().id,       \
+        _cogserver.registerRequest(do_cmd##Request::info().id,        \
                                     & do_cmd##Factory);               \
     }                                                                 \
     void do_cmd##_unregister(void) {                                  \
-        cogserver().unregisterRequest(do_cmd##Request::info().id);    \
+        _cogserver.unregisterRequest(do_cmd##Request::info().id);     \
     }
 
-
-/**
- * This struct defines the extended set of attributes used by opencog requests.
- * The current set of attributes are:
- *     id:          the name of the request
- *     description: a short description of what the request does
- *     help:        an extended description of the request, listing multiple
- *                  usage patterns and parameters
- */
-struct RequestClassInfo : public ClassInfo
-{
-    std::string description;
-    std::string help;
-    bool is_shell;
-    /** Whether default shell should be hidden from help */
-    bool hidden;
-
-    RequestClassInfo() : is_shell(false), hidden(false) {};
-    RequestClassInfo(const char* i, const char *d, const char* h,
-            bool s = false, bool hide = false)
-        : ClassInfo(i), description(d), help(h), is_shell(s), hidden(hide) {};
-    RequestClassInfo(const std::string& i, 
-                     const std::string& d,
-                     const std::string& h, 
-                     bool s = false,
-                     bool hide = false)
-        : ClassInfo(i), description(d), help(h), is_shell(s), hidden(hide) {};
-};
 
 /**
  * This class defines the base abstract class that should be extended
@@ -229,6 +208,7 @@ struct RequestClassInfo : public ClassInfo
  * A typical derived Request declaration and initialization would thus
  * look as follows:
  *
+ * @code
  * // MyRequest.h
  * #include <opencog/server/Request.h>
  * #include <opencog/server/Factory.h>
@@ -265,12 +245,14 @@ struct RequestClassInfo : public ClassInfo
  * CogServer& cogserver = static_cast<CogServer&>(server());
  * cogserver.registerRequest(MyRequest::info().id, &factory); 
  * ...
+ * @endcode
  */
 class Request
 {
 
 protected:
 
+    CogServer&             _cogserver;
     RequestResult*         _requestResult;
     std::list<std::string> _parameters;
     std::string            _mimeType;
@@ -278,7 +260,7 @@ protected:
 public:
 
     /** Request's constructor */
-    Request();
+    Request(CogServer&);
 
     /** Request's desconstructor */
     virtual ~Request();
@@ -306,6 +288,7 @@ public:
 
 };
 
+/** @}*/
 } // namespace 
 
 #endif // _OPENCOG_REQUEST_H

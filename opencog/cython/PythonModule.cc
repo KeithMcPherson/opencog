@@ -61,23 +61,23 @@ static const char* DEFAULT_PYTHON_MODULE_PATHS[] =
 
 // Factories
 
-Agent* PythonAgentFactory::create() const
+Agent* PythonAgentFactory::create(CogServer& cs) const
 {
     logger().info() << "Creating python agent " << _pySrcModuleName << "." << _pyClassName;
-    PyMindAgent* pma = new PyMindAgent(_pySrcModuleName, _pyClassName);
+    PyMindAgent* pma = new PyMindAgent(cs, _pySrcModuleName, _pyClassName);
     return pma;
 }
 
-Request* PythonRequestFactory::create() const
+Request* PythonRequestFactory::create(CogServer& cs) const
 {
     logger().info() << "Creating python request " << _pySrcModuleName << "." << _pyClassName;
-    PyRequest* pma = new PyRequest(_pySrcModuleName, _pyClassName, _cci);
+    PyRequest* pma = new PyRequest(cs, _pySrcModuleName, _pyClassName, _cci);
     return pma;
 }
 
 // ------
 
-PythonModule::PythonModule() : Module()
+PythonModule::PythonModule(CogServer& cs) : Module(cs)
 {
 }
 
@@ -102,11 +102,11 @@ bool PythonModule::unregisterAgentsAndRequests()
     // Requires GIL
     foreach (std::string s, _agentNames) {
         DPRINTF("Deleting all instances of %s\n", s.c_str());
-        cogserver().unregisterAgent(s);
+        _cogserver.unregisterAgent(s);
     }
     foreach (std::string s, _requestNames) {
         DPRINTF("Unregistering requests of id %s\n", s.c_str());
-        cogserver().unregisterRequest(s);
+        _cogserver.unregisterRequest(s);
     }
 
     return true;
@@ -121,9 +121,9 @@ void PythonModule::init()
     logger().info("[PythonModule] Initialising Python CogServer module.");
 
     // Start up Python (this init method skips registering signal handlers)
-    if (!Py_IsInitialized())
+    if (not Py_IsInitialized())
         Py_InitializeEx(0);
-    if (!PyEval_ThreadsInitialized()) {
+    if (not PyEval_ThreadsInitialized()) {
         PyEval_InitThreads();
         // Without this, pyFinalize() crashes
         _mainstate = PyThreadState_Get();
@@ -140,7 +140,7 @@ void PythonModule::init()
     for (int i = 0; config_paths[i] != NULL; ++i) {
         boost::filesystem::path modulePath(config_paths[i]);
         if (boost::filesystem::exists(modulePath))
-            PyList_Append(sysPath, PyString_FromString(modulePath.string().c_str()));
+            PyList_Append(sysPath, PyBytes_FromString(modulePath.string().c_str()));
     }
 
     // Add custom paths for python modules from the config file if available
@@ -152,7 +152,7 @@ void PythonModule::init()
              it != pythonpaths.end(); ++it) {
             boost::filesystem::path modulePath(*it);
             if (boost::filesystem::exists(modulePath)) {
-                PyList_Append(sysPath, PyString_FromString(modulePath.string().c_str()));
+                PyList_Append(sysPath, PyBytes_FromString(modulePath.string().c_str()));
             } else {
                 logger().warn("PythonEval::%s Could not find custom python extension directory: %s ",
                                __FUNCTION__,
@@ -162,7 +162,8 @@ void PythonModule::init()
         }
     }
 
-    PythonEval::instance();
+    // The eval instance should use the provided cogserver!
+    PythonEval::instance(&_cogserver.getAtomSpace());
 
     if (import_agent_finder() == -1) {
         PyErr_Print();
@@ -233,7 +234,7 @@ std::string PythonModule::do_load_py(Request *dummy, std::list<std::string> args
 
             // register the agent with a custom factory that knows how to
             // instantiate new Python MindAgents
-            cogserver().registerAgent(dottedName, new PythonAgentFactory(moduleName,s));
+            _cogserver.registerAgent(dottedName, new PythonAgentFactory(moduleName,s));
 
             // save a list of Python agents that we've added to the CogServer
             _agentNames.push_back(dottedName);
@@ -258,7 +259,7 @@ std::string PythonModule::do_load_py(Request *dummy, std::list<std::string> args
             // Register request with cogserver using dotted name: module.RequestName
             std::string dottedName = moduleName + "." + s;
             // register the agent with a custom factory that knows how to
-            cogserver().registerRequest(dottedName, 
+            _cogserver.registerRequest(dottedName, 
                 new PythonRequestFactory(moduleName, s, short_desc, long_desc, is_shell));
             // save a list of Python agents that we've added to the CogServer
             _requestNames.push_back(dottedName);

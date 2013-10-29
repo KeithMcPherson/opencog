@@ -33,6 +33,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_attention
+ *  @{
+ */
 
 class CogServer;
 
@@ -54,12 +57,15 @@ public:
         return _ci;
     }
 
-    STIDecayingAgent();
+    STIDecayingAgent(CogServer&);
     virtual ~STIDecayingAgent();
-    virtual void run(CogServer *server);
+    virtual void run();
 
 }; // class
 
+typedef std::shared_ptr<STIDecayingAgent> STIDecayingAgentPtr;
+
+/** @}*/
 } // namespace
 
 #endif // _OPENCOG_STI_DECAYING_AGENT_H

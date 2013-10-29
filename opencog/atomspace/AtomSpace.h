@@ -32,26 +32,16 @@
 #include <boost/scoped_ptr.hpp>
 
 #include <opencog/atomspace/AtomSpaceAsync.h>
-#include <opencog/atomspace/AtomTable.h>
 #include <opencog/atomspace/AttentionValue.h>
-#include <opencog/atomspace/BackingStore.h>
 #include <opencog/atomspace/ClassServer.h>
 #include <opencog/atomspace/TruthValue.h>
 #include <opencog/util/exceptions.h>
 
-// Whether to wrap certain functions in lru_cache_threaded<>
-#define USE_ATOMSPACE_LOCAL_THREAD_CACHE 1
-
-#ifdef USE_ATOMSPACE_LOCAL_THREAD_CACHE
-#include <opencog/util/lru_cache.h>
-#endif
-
-
 namespace opencog
 {
-
-typedef boost::shared_ptr<TruthValue> TruthValuePtr;
-
+/** \addtogroup grp_atomspace
+ *  @{
+ */
 /**
  * The AtomSpace class is a legacy interface to OpenCog's AtomSpace and
  * provide standard functions that return results immediately.
@@ -97,7 +87,7 @@ class AtomSpace
      */
     AtomSpace& operator=(const AtomSpace&);
 public:
-    void do_merge_tv(Handle, const TruthValue&);
+    void do_merge_tv(Handle, TruthValuePtr);
 
     /** 
      * The AtomSpace class is essentially just be a wrapper of the asynchronous
@@ -162,25 +152,6 @@ public:
     inline int getSize() const { return atomSpaceAsync->getSize()->get_result(); }
 
     /**
-     * DEPRECATED! Add an atom an optional TruthValue object to the Atom Table
-     * This is a deprecated function; do not use it in new code,
-     * if at all possible.
-     *
-     * @param atom the handle of the Atom to be added
-     * @param tvn the TruthValue object to be associated to the added
-     *        atom. NULL if the own atom's tv must be used.
-     * @return Handle referring to atom after it's been added.
-     * @deprecated This is a legacy code left-over from when one could
-     * have non-real atoms, i.e. those whose handles were
-     * less than 500, and indicated types, not atoms.
-     * Instead of using that method, one should use
-     * addNode or addLink (which is a bit faster too) which is actually called
-     * internally by this wrapper.
-     */
-    Handle addRealAtom(const Atom& atom,
-                       const TruthValue& tvn = TruthValue::NULL_TV());
-
-    /**
      * Prints atoms of this AtomSpace to the given output stream.
      * @param output  the output stream where the atoms will be printed.
      * @param type  the type of atoms that should be printed.
@@ -198,18 +169,18 @@ public:
      * \param tvn   Optional TruthValue of the node. If not provided, uses the DEFAULT_TV (see TruthValue.h) 
      * @deprecated New code should directly use the AtomSpaceAsync::addNode method.
      */
-    inline Handle addNode(Type t, const std::string& name = "", const TruthValue& tvn = TruthValue::DEFAULT_TV())
+    inline Handle addNode(Type t, const std::string& name = "", TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
-        return atomSpaceAsync->addNode(t,name,tvn)->get_result();
+        return atomSpaceAsync->addNode(t, name, tvn)->get_result();
     }
 
     /**
      * Add a new node to the AtomTable. A random 16-character string
      * will be appended to the provided name.
-     * @TODO: Later on, the names can include server/time info to decrease
+     * @todo: Later on, the names can include server/time info to decrease
      * the probability of collisions and be more informative.
      **/
-    Handle addPrefixedNode(Type t, const std::string& prefix = "", const TruthValue& tvn = TruthValue::DEFAULT_TV());
+    Handle addPrefixedNode(Type t, const std::string& prefix = "", TruthValuePtr tvn = TruthValue::DEFAULT_TV());
 
     /**
      * Add a new link to the Atom Table
@@ -223,13 +194,13 @@ public:
      * @deprecated New code should directly use the AtomSpaceAsync::addLink method.
      */
     inline Handle addLink(Type t, const HandleSeq& outgoing,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     { 
         return atomSpaceAsync->addLink(t,outgoing,tvn)->get_result();
     }
 
     inline Handle addLink(Type t, Handle h,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(h);
@@ -237,7 +208,7 @@ public:
     }
 
     inline Handle addLink(Type t, Handle ha, Handle hb,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -246,7 +217,7 @@ public:
     }
 
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -256,7 +227,7 @@ public:
     }
 
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc, Handle hd,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -267,7 +238,7 @@ public:
     }
 
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc, Handle hd, Handle he,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -280,7 +251,7 @@ public:
 
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc,
                           Handle hd, Handle he, Handle hf,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -294,7 +265,7 @@ public:
 
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc,
                           Handle hd, Handle he, Handle hf, Handle hg,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -310,7 +281,7 @@ public:
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc,
                           Handle hd, Handle he, Handle hf, Handle hg,
                           Handle hh,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -327,7 +298,7 @@ public:
     inline Handle addLink(Type t, Handle ha, Handle hb, Handle hc,
                           Handle hd, Handle he, Handle hf, Handle hg,
                           Handle hh, Handle hi,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV())
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV())
     {
         HandleSeq oset;
         oset.push_back(ha);
@@ -346,13 +317,15 @@ public:
      * Removes an atom from the atomspace
      *
      * @param h The Handle of the atom to be removed.
-     * @param recursive Recursive-removal flag; if set, the links in the
-     *        incoming set of the atom to be removed will also be
-     *        removed.
+     * @param recursive Recursive-removal flag; the removal will
+     *       fail if this flag is not set, and the atom has incoming
+     *       links (that are in the atomspace).  Set to false only if
+     *       you can guarantee that this atom does not appear in the
+     *       outgoing set of any link in the atomspace.
      * @return True if the Atom for the given Handle was successfully
      *         removed. False, otherwise.
      */
-    bool removeAtom(Handle h, bool recursive = false) {
+    bool removeAtom(Handle h, bool recursive = true) {
         return atomSpaceAsync->removeAtom(h,recursive)->get_result();
     }
 
@@ -378,12 +351,16 @@ public:
 
     /** Get the atom referred to by Handle h represented as a string. */
     std::string atomAsString(Handle h, bool terse = true) const {
-        return atomSpaceAsync->atomAsString(h,terse)->get_result();
+        if (terse) return h->toShortString();
+        return h->toString();
     }
 
     /** Retrieve the name of a given Handle */
-    std::string getName(Handle h) const {
-        return atomSpaceAsync->getName(h)->get_result();
+    const std::string& getName(Handle h) const {
+        static std::string noname;
+        NodePtr nnn = NodeCast(h);
+        if (nnn) return nnn->getName();
+        return noname;
     }
 
     /** Change the Short-Term Importance of a given Handle */
@@ -408,33 +385,39 @@ public:
     
     /** Retrieve the Short-Term Importance of a given Handle */
     AttentionValue::sti_t getSTI(Handle h) const {
-        return atomSpaceAsync->getSTI(h)->get_result();
+        return h->getAttentionValue()->getSTI();
     }
 
-    /** Retrieve the Long-term Importance of a given AttentionValueHolder */
+    /** Retrieve the Long-term Importance of a given atom */
     AttentionValue::lti_t getLTI(Handle h) const {
-        return atomSpaceAsync->getLTI(h)->get_result();
+        return h->getAttentionValue()->getLTI();
     }
 
-    /** Retrieve the Very-Long-Term Importance of a given
-     * AttentionValueHolder */
+    /** Retrieve the Very-Long-Term Importance of a given atom */
     AttentionValue::vlti_t getVLTI(Handle h) const {
-        return atomSpaceAsync->getVLTI(h)->get_result();
+        return h->getAttentionValue()->getVLTI();
     }
 
     /** Retrieve the outgoing set of a given link */
-    HandleSeq getOutgoing(Handle h) const {
-        return atomSpaceAsync->getOutgoing(h)->get_result();
+    const HandleSeq& getOutgoing(Handle h) const {
+        static HandleSeq empty;
+        LinkPtr lll = LinkCast(h);
+        if (lll) return lll->getOutgoingSet();
+        return empty;
     }
 
     /** Retrieve a single Handle from the outgoing set of a given link */
-    Handle getOutgoing(Handle h, int idx) const {
-        return atomSpaceAsync->getOutgoing(h,idx)->get_result();
+    Handle getOutgoing(Handle h, Arity idx) const {
+        LinkPtr lll = LinkCast(h);
+        if (lll) return lll->getOutgoingAtom(idx);
+        return Handle::UNDEFINED;
     }
 
     /** Retrieve the arity of a given link */
-    int getArity(Handle h) const {
-        return atomSpaceAsync->getArity(h)->get_result();
+    Arity getArity(Handle h) const {
+        LinkPtr lll = LinkCast(h);
+        if (lll) return lll->getArity();
+        return 0;
     }
 
     /** Return whether s is the source handle in a link l */ 
@@ -443,48 +426,26 @@ public:
     }
 
     /** Retrieve the AttentionValue of a given Handle */
-    AttentionValue getAV(Handle h) const;
+    AttentionValuePtr getAV(Handle h) const {
+        return h->getAttentionValue();
+    }
 
     /** Change the AttentionValue of a given Handle */
-    void setAV(Handle h, const AttentionValue &av);
+    void setAV(Handle, AttentionValuePtr);
 
     /** Retrieve the type of a given Handle */
-    Type getType(Handle h) const;
+    Type getType(Handle h) const {
+        return h->getType();
+    }
 
-#ifdef USE_ATOMSPACE_LOCAL_THREAD_CACHE
-    // Experimental code for speeding up TV retrieval...
-    /** Cached get type function */
-    class _getType : public std::unary_function<Handle, Type> {
-        AtomSpace* a;
-        public:
-        _getType(AtomSpace* _a) : a(_a) { };
-        Type operator()(const Handle& h) const {
-            return a->atomSpaceAsync->getType(h)->get_result();
-        }
-    };
-    _getType* __getType;
-    // dummy get type version which is cached using lru_cache
-    lru_cache_threaded<AtomSpace::_getType> *getTypeCached;
-#endif // USE_ATOMSPACE_LOCAL_THREAD_CACHE
-
-
-    /** Retrieve the TruthValue summary of a given Handle
-     */
-    //tv_summary_t getTV(Handle h, VersionHandle vh = NULL_VERSION_HANDLE) const;
-
-    /** Retrieve the TruthValue of a given Handle
-     * @note This is an unpleasant hack which is unsafe as it returns a pointer
-     * to the AtomSpace TV which may be lost if the Atom the TV belongs to is
-     * removed. It's much faster than having to copy the value and use smart
-     * pointers though. Garbage collection should solve this.
-     */
+    /** Retrieve the TruthValue of a given Handle */
     TruthValuePtr getTV(Handle h, VersionHandle vh = NULL_VERSION_HANDLE) const;
 
     strength_t getMean(Handle h, VersionHandle vh = NULL_VERSION_HANDLE) const;  
     confidence_t getConfidence(Handle h, VersionHandle vh = NULL_VERSION_HANDLE) const;  
 
     /** Change the TruthValue of a given Handle */
-    void setTV(Handle h, const TruthValue& tv, VersionHandle vh = NULL_VERSION_HANDLE);
+    void setTV(Handle, TruthValuePtr, VersionHandle vh = NULL_VERSION_HANDLE);
 
     /** Change the primary TV's mean of a given Handle
      * @note By Joel: this makes no sense to me, how can you generally set a mean
@@ -495,24 +456,23 @@ public:
         atomSpaceAsync->setMean(h, mean)->get_result();
     }
 
-    /** Clone an atom from the AtomSpace, replaces the public access to TLB::getAtom
-     * that many modules were doing.
-     * @param h Handle of atom to clone
-     * @return A smart pointer to the atom
-     * @note Any changes to the atom object must be committed using
-     * AtomSpace::commitAtom for them to be merged with the AtomSpace.
-     * Otherwise changes are lost.
-     */
-    boost::shared_ptr<Atom> cloneAtom(const Handle& h) const;
-
-    /** Commit an atom that has been cloned from the AtomSpace.
-     *
-     * @param a Atom to commit
-     * @return whether the commit was successful
-     */
-    bool commitAtom(const Atom& a);
-
-    bool isValidHandle(const Handle& h) const;
+    /**
+     * Return true if the handle belongs to *this* atomspace; else
+     * return false.  Note that the handle might still be valid in
+     * some other atomsapce. */
+    bool isValidHandle(Handle h) const {
+        // The h->getHandle() maneuver below is a trick to get at the
+        // UUID of the actual atom, rather than the cached UUID in the
+        // handle. Technically, this is not quite right, since perhaps
+        // handles with valid UUID's but unresolved atom pointers are
+        // "valid".  This call is essentially forcing resolution :-(
+        // We should also be confirming that the UUID is OK, by asking
+        // the TLB about it.  Anyway, this check is not entirely technically
+        // correct ... worse, its a potentially performance-critical check,
+        // as its called fairly often (I think).
+        // return (NULL != h) and TLB::isValidHandle(h->getHandle());
+        return (NULL != h) and (h->getHandle() != Handle::UNDEFINED);
+    }
 
     /** Retrieve the doubly normalised Short-Term Importance between -1..1
      * for a given Handle. STI above and below threshold normalised separately
@@ -565,8 +525,8 @@ public:
     }
 
     /** Convenience functions... */
-    bool isNode(const Handle& h) const;
-    bool isLink(const Handle& h) const;
+    bool isNode(Handle h) const { return NodeCast(h) != NULL; }
+    bool isLink(Handle h) const { return LinkCast(h) != NULL; }
 
     /**
      * Gets a set of handles that matches with the given arguments.
@@ -1145,7 +1105,7 @@ public:
         HandleSeq result;
         for (; begin != end; begin++) {
             //std::cout << "evaluating atom " << atomAsString(*begin) << std::endl;
-            if ((*compare)(*cloneAtom(*begin))) {
+            if ((*compare)(*begin)) {
                 //std::cout << "passed! " <<  std::endl;
                 result.push_back(*begin);
             }
@@ -1165,7 +1125,7 @@ public:
 
     struct TruePredicate : public AtomPredicate {
         TruePredicate(){}
-        virtual bool test(const Atom& atom) { return true; }
+        virtual bool test(AtomPtr atom) { return true; }
     };
 
     template<typename InputIterator>
@@ -1177,8 +1137,8 @@ public:
     struct STIAboveThreshold : public AtomPredicate {
         STIAboveThreshold(const AttentionValue::sti_t t) : threshold (t) {}
 
-        virtual bool test(const Atom& atom) {
-            return atom.getAttentionValue().getSTI() > threshold;
+        virtual bool test(AtomPtr atom) {
+            return atom->getAttentionValue()->getSTI() > threshold;
         }
         AttentionValue::sti_t threshold;
     };
@@ -1186,8 +1146,8 @@ public:
     struct LTIAboveThreshold : public AtomPredicate {
         LTIAboveThreshold(const AttentionValue::lti_t t) : threshold (t) {}
 
-        virtual bool test(const Atom& atom) {
-            return atom.getAttentionValue().getLTI() > threshold;
+        virtual bool test(AtomPtr atom) {
+            return atom->getAttentionValue()->getLTI() > threshold;
         }
         AttentionValue::lti_t threshold;
     };
@@ -1196,35 +1156,12 @@ public:
     // of callbacks. It's accessible via the Cython wrapper.
     std::list<Handle> addAtomSignalQueue;
 
-
-    static bool isHandleInSeq(Handle h, HandleSeq &seq);
-
 private:
-    /**
-     * Remove stimulus from atom, only should be used when Atom is deleted.
-     */
-    void removeStimulus(Handle h);
-
-    bool handleAddSignal(AtomSpaceImpl *as, Handle h);
-
-#ifdef USE_ATOMSPACE_LOCAL_THREAD_CACHE
-    /** For monitoring removals to the AtomSpace so that cache entries can be
-     * invalidated as necessary
-     */
-    bool handleRemoveSignal(AtomSpaceImpl *as, Handle h);
-
-    //! Whether AtomSpaceWrapper is listening for AtomSpace signals.
-    bool watchingAtomSpace;
-
     boost::signals::connection c_add; //! Connection to add atom signals
-    boost::signals::connection c_remove; //! Connection to remove atom signals
-
-    void setUpCaching();
-#endif
-
-
+    bool handleAddSignal(Handle);
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_ATOMSPACE_H

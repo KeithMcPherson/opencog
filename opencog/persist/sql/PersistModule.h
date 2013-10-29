@@ -36,6 +36,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_persist
+ *  @{
+ */
 
 class SQLBackingStore;
 class PersistModule : public Module
@@ -86,13 +89,14 @@ private:
 public:
     const char* id(void);
 
-    PersistModule(void);
+    PersistModule(CogServer&);
     virtual ~PersistModule();
 
     virtual void init(void);
 
 }; // class
 
+/** @}*/
 }  // namespace
 
 #endif // _OPENCOG_PERSIST_MODULE_H

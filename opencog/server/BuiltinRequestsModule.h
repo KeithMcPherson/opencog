@@ -39,6 +39,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class BuiltinRequestsModule : public Module
 {
@@ -140,19 +143,16 @@ DECLARE_CMD_REQUEST(BuiltinRequestsModule, "agents-active", do_activeAgents,
 
     void registerAgentRequests();
     void unregisterAgentRequests();
+
 public:
-
-    static inline const char* id() {
-        static const char* _id = "opencog::BuiltinRequestsModule";
-        return _id;
-    }
-
-    BuiltinRequestsModule();
+    static const char* id();
+    BuiltinRequestsModule(CogServer&);
     virtual ~BuiltinRequestsModule();
     virtual void init();
 
 }; // class
 
+/** @}*/
 }  // namespace
 
 #endif // _OPENCOG_BUILTIN_REQUESTS_MODULE_H

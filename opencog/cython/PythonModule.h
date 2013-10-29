@@ -12,6 +12,8 @@
 #include <opencog/server/Request.h>
 #include <opencog/server/CogServer.h>
 
+#include "PyIncludeWrapper.h" // Needed for PyThreadState
+
 namespace opencog
 {
 
@@ -34,7 +36,7 @@ public:
     {
         delete _ci;
     }
-    virtual Agent* create() const;
+    virtual Agent* create(CogServer&) const;
     virtual const ClassInfo& info() const { return *_ci; }
 };
 
@@ -61,7 +63,7 @@ public:
     {
         delete _cci;
     }
-    virtual Request* create() const;
+    virtual Request* create(CogServer&) const;
     virtual const ClassInfo& info() const { return *_cci; }
 };
 
@@ -97,7 +99,7 @@ public:
     }
     static inline const char* id();
 
-    PythonModule();
+    PythonModule(CogServer&);
     ~PythonModule();
     void init();
 

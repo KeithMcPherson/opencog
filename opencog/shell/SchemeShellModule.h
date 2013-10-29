@@ -32,6 +32,9 @@
 #include <opencog/server/CogServer.h>
 
 namespace opencog {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class SchemeShellModule : public Module
 {
@@ -55,13 +58,14 @@ class SchemeShellModule : public Module
 			false, false)
 
 	public:
-		SchemeShellModule(void);
+		SchemeShellModule(CogServer&);
 		virtual ~SchemeShellModule();
 
-		virtual const char *id(void);
+		static const char *id(void);
 		virtual void init(void);
 };
 
+/** @}*/
 }
 
 #endif // _OPENCOG_SCHEME_SHELL_MODULE_H

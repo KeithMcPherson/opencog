@@ -34,6 +34,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_spatial
+ *  @{
+ */
     namespace spatial
     {
 
@@ -43,6 +46,8 @@ namespace opencog
         public:
             Entity3D(BlockVector _centerPosition, int _width, int _lenght, int _height,double yaw, std::string _entityName, std::string _entityClass, bool _is_obstacle);
             ~Entity3D();
+
+            Entity3D* clone();
 
             inline int getEntityID() const {return mID;}
             inline std::string getEntityName() const { return mName;}
@@ -99,6 +104,7 @@ namespace opencog
             math::Quaternion mOrientation;
         };
     }
+/** @}*/
 }
 
 

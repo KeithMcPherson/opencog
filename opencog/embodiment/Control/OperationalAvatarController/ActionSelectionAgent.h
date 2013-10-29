@@ -30,8 +30,6 @@
 
 namespace opencog { namespace oac {
 
-using namespace std;
-
 class ActionSelectionAgent : public opencog::Agent
 {
 
@@ -41,8 +39,8 @@ private:
 
 public:
 
-    ~ActionSelectionAgent();
-    ActionSelectionAgent();
+    virtual ~ActionSelectionAgent();
+    ActionSelectionAgent(CogServer&);
 
     virtual const ClassInfo& classinfo() const {
         return info();
@@ -53,9 +51,11 @@ public:
         return _ci;
     }
 
-    void run(opencog::CogServer *server);
+    virtual void run();
 
 }; // class
+
+typedef std::shared_ptr<ActionSelectionAgent> ActionSelectionAgentPtr;
 
 } } // namespace opencog::oac
 

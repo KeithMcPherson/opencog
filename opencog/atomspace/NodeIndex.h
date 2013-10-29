@@ -30,6 +30,10 @@
 
 namespace opencog
 {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
+
 /**
  * Implements an (type, name) index array of RB-trees (C++ set)
  * That is, given only the type and name of an atom, this will
@@ -43,8 +47,8 @@ class NodeIndex
 	public:
 		NodeIndex();
 
-		void insertAtom(Atom* a);
-		void removeAtom(Atom* a);
+		void insertAtom(AtomPtr a);
+		void removeAtom(AtomPtr a);
 		void remove(bool (*)(Handle));
 		void resize();
 
@@ -52,6 +56,7 @@ class NodeIndex
 		UnorderedHandleSet getHandleSet(Type type, const char *, bool subclass) const;
 };
 
+/** @}*/
 } //namespace opencog
 
 #endif // _OPENCOG_NODEINDEX_H

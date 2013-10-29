@@ -22,13 +22,14 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "SleepRequest.h"
-
+#include <unistd.h>  // for usleep
 #include <sstream>
+#include "SleepRequest.h"
 
 using namespace opencog;
 
-SleepRequest::SleepRequest()
+SleepRequest::SleepRequest(CogServer& cs) :
+    Request(cs)
 {
 }
 

@@ -25,13 +25,17 @@
 #ifndef _OPENCOG_UNLOAD_MODULE_REQUEST_H
 #define _OPENCOG_UNLOAD_MODULE_REQUEST_H
 
-#include <vector>
 #include <string>
+#include <vector>
 
 #include <opencog/server/Request.h>
+#include <opencog/server/RequestClassInfo.h>
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class UnloadModuleRequest : public Request
 {
@@ -48,12 +52,13 @@ public:
         return _cci;
     }
 
-    UnloadModuleRequest();
+    UnloadModuleRequest(CogServer&);
     virtual ~UnloadModuleRequest();
     virtual bool execute(void);
     virtual bool isShell(void) {return info().is_shell;}
 };
 
+/** @}*/
 } // namespace 
 
 #endif // _OPENCOG_UNLOAD_MODULE_REQUEST_H

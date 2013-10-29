@@ -27,23 +27,33 @@
 #ifndef _OPENCOG_ATOM_H
 #define _OPENCOG_ATOM_H
 
+#include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 
+#include <boost/signal.hpp>
+
+#include <opencog/util/exceptions.h>
+
+#include <opencog/atomspace/AttentionValue.h>
+#include <opencog/atomspace/CompositeTruthValue.h>
 #include <opencog/atomspace/TruthValue.h>
 #include <opencog/atomspace/types.h>
-#include <opencog/atomspace/AttentionValue.h>
-#include <opencog/atomspace/AtomSpaceDefinitions.h>
-#include <opencog/util/exceptions.h>
-#ifdef ZMQ_EXPERIMENT
-	#include "ProtocolBufferSerializer.h"
-#endif
 
 class AtomUTest;
 
 namespace opencog
 {
 
-class AtomTable;
+/** \addtogroup grp_atomspace
+ *  @{
+ */
+
+class Link;
+typedef std::shared_ptr<Link> LinkPtr;
+typedef std::set<LinkPtr> IncomingSet;
+typedef boost::signal<void (AtomPtr, LinkPtr)> AtomPairSignal;
 
 /**
  * Atoms are the basic implementational unit in the system that
@@ -51,22 +61,17 @@ class AtomTable;
  * links are specialization of atoms, that is, they inherit all
  * properties from atoms.
  */
-class Atom : public AttentionValueHolder
+class Atom
+    : public std::enable_shared_from_this<Atom>
 {
-    friend class CommitAtomASR;   // needs access to clone
-    friend class SavingLoading;   // needs to set flags diectly
-    friend class AtomTable;
-    friend class TLB;
-    friend class ::AtomUTest;
-#ifdef ZMQ_EXPERIMENT
-    friend class ProtocolBufferSerializer;
-#endif
+    friend class ::AtomUTest;     // Needs to call setFlag()
+    friend class AtomTable;       // Needs to call MarkedForRemoval()
+    friend class ImportanceIndex; // Needs to call setFlag()
+    friend class Handle;          // Needs to view _uuid
+    friend class SavingLoading;   // Needs to set _uuid
+    friend class TLB;             // Needs to view _uuid
 
 private:
-#ifdef ZMQ_EXPERIMENT
-    Atom() {};
-#endif
-
     //! Sets the AtomTable in which this Atom is inserted.
     void setAtomTable(AtomTable *);
 
@@ -74,16 +79,14 @@ private:
     AtomTable *getAtomTable() const { return atomTable; }
 
 protected:
-    // XXX FIXME, atoms fundamentally must not be clonable! Yeah?
-    virtual Atom* clone() const = 0;
-
-    Handle handle;
+    UUID _uuid;
     AtomTable *atomTable;
 
     Type type;
     char flags;
 
-    TruthValue *truthValue;
+    TruthValuePtr truthValue;
+    AttentionValuePtr _attentionValue;
 
     /**
      * Constructor for this class.
@@ -94,52 +97,39 @@ protected:
      * @param The truthValue of the atom. note: This is not cloned as
      *        in setTruthValue.
      */
-    Atom(Type, const TruthValue& = TruthValue::NULL_TV(),
-            const AttentionValue& = AttentionValue::DEFAULT_AV());
+    Atom(Type, TruthValuePtr = TruthValue::NULL_TV(),
+            AttentionValuePtr = AttentionValue::DEFAULT_AV());
 
-public:
+    struct InSet
+    {
+        // Just right now, we will use a single shared mutex for all
+        // locking on the incoming set.  If this causes too much
+        // contention, then we can fall back to a non-global lock,
+        // at the cost of 40 additional bytes per atom.
+        static std::mutex _mtx;
+        // incoming set is not tracked by garbage collector,
+        // to avoid cyclic references.
+        // std::set<ptr> uses 48 bytes (per atom).
+        IncomingSet _iset;
+        // Some people want to know if the incoming set has changed...
+        AtomPairSignal _addAtomSignal;
+        AtomPairSignal _removeAtomSignal;
+    };
+    typedef std::shared_ptr<InSet> InSetPtr;
+    InSetPtr _incoming_set;
+    void keep_incoming_set();
+    void drop_incoming_set();
 
-    virtual ~Atom();
+    // Insert and remove links from the incoming set.
+    void insert_atom(LinkPtr);
+    void remove_atom(LinkPtr);
 
-    /** Returns the type of the atom.
-     *
-     * @return The type of the atom.
-     */
-    inline Type getType() const { return type; }
-
-    /** Returns the handle of the atom.
-     *
-     * @return The handle of the atom.
-     */
-    inline Handle getHandle() const { return handle; }
-
-    /** Returns the AttentionValue object of the atom.
-     *
-     * @return The const reference to the AttentionValue object
-     * of the atom.
-     */
-    const AttentionValue& getAttentionValue() const;
-
-    //! Sets the AttentionValue object of the atom.
-    void setAttentionValue(const AttentionValue&) throw (RuntimeException);
-
-    /** Returns the TruthValue object of the atom.
-     *
-     * @return The const referent to the TruthValue object of the atom.
-     */
-    const TruthValue& getTruthValue() const;
-
-    //! Sets the TruthValue object of the atom.
-    void setTruthValue(const TruthValue&);
-
+private:
     /** Returns whether this atom is marked for removal.
      *
      * @return Whether this atom is marked for removal.
      */
-    bool isMarkedForRemoval() const
-    {
-        return (flags & MARKED_FOR_REMOVAL) != 0;
-    }
+    bool isMarkedForRemoval() const;
 
     /** Returns an atom flag.
      * A byte represents all flags. Each bit is one of them.
@@ -162,12 +152,55 @@ public:
     //! Unsets removal flag.
     void unsetRemovalFlag();
 
+public:
+
+    virtual ~Atom();
+
+    /** Returns the type of the atom.
+     *
+     * @return The type of the atom.
+     */
+    inline Type getType() const { return type; }
+
+    /** Returns the handle of the atom.
+     *
+     * @return The handle of the atom.
+     */
+    inline Handle getHandle() {
+        return Handle(std::static_pointer_cast<Atom>(shared_from_this()));
+    }
+
+    /** Returns the AttentionValue object of the atom.
+     *
+     * @return The const reference to the AttentionValue object
+     * of the atom.
+     */
+    AttentionValuePtr getAttentionValue() const { return _attentionValue; }
+
+    //! Sets the AttentionValue object of the atom.
+    void setAttentionValue(AttentionValuePtr) throw (RuntimeException);
+
+    /** Returns the TruthValue object of the atom.
+     *
+     * @return The const referent to the TruthValue object of the atom.
+     */
+    TruthValuePtr getTruthValue() const { return truthValue; }
+
+    //! Sets the TruthValue object of the atom.
+    void setTruthValue(TruthValuePtr);
+    void setTruthValue(CompositeTruthValuePtr ctv) {
+        setTruthValue(std::static_pointer_cast<TruthValue>(ctv));
+    }
+
+    //! Return the incoming set of this atom.
+    IncomingSet getIncomingSet() const;
+
     /** Returns a string representation of the node.
      *
      * @return A string representation of the node.
      */
-    virtual std::string toString(void) const = 0;
-    virtual std::string toShortString(void) const = 0;
+    virtual std::string toString(std::string indent = "") const = 0;
+    virtual std::string toShortString(std::string indent = "") const = 0;
 
     /** Returns whether two atoms are equal.
      *
@@ -182,6 +215,7 @@ public:
     virtual bool operator!=(const Atom&) const = 0;
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_ATOM_H

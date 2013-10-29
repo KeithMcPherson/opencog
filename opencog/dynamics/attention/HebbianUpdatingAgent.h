@@ -33,6 +33,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_attention
+ *  @{
+ */
 
 class CogServer;
 
@@ -96,9 +99,9 @@ public:
         return _ci;
     }
 
-    HebbianUpdatingAgent();
+    HebbianUpdatingAgent(CogServer&);
     virtual ~HebbianUpdatingAgent();
-    virtual void run(CogServer *server);
+    virtual void run();
 
     /** Return the agent's logger object
      *
@@ -121,6 +124,9 @@ public:
 
 }; // class
 
+typedef std::shared_ptr<HebbianUpdatingAgent> HebbianUpdatingAgentPtr;
+
+/** @}*/
 } // namespace
 
 #endif // _OPENCOG_HEBBIAN_LEARNING_AGENT_H

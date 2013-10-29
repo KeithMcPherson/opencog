@@ -24,7 +24,13 @@
 #ifndef _MOSES_SCORING_ITERATORS_H
 #define _MOSES_SCORING_ITERATORS_H
 
+#include <opencog/util/dorepeat.h>
+#include <opencog/util/numeric.h> // needed for pow2
+#include <opencog/comboreduct/combo/vertex.h> // needed for contin_t
+
 namespace opencog { namespace moses {
+
+using namespace opencog::combo;
 
 // Base functor for functors taking an iterator range of value type and result T
 template<typename T>
@@ -91,7 +97,7 @@ struct majority : public iterator_function<bool>
     // function, the result corresponds to its output
     template<typename It>
     bool operator()(It from, It to) const {
-        return std::count(from, to, true) > arity / 2;
+        return (unsigned int)std::count(from, to, true) > arity / 2;
     }
 };
 

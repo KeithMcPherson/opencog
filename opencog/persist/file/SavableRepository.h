@@ -33,6 +33,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_persist
+ *  @{
+ */
 
 class Atom;
 
@@ -67,14 +70,15 @@ public:
      *
      * @param The file where the repository should be saved.
      */
-    virtual void saveRepository(FILE *) const = 0;
+    virtual void saveRepository(FILE*) const = 0;
 
     /**
      * Loads the repository from a file.
      *
      * @param The file from where the repository should be loaded.
-     */
-    virtual void loadRepository(FILE *, HandleMap<Atom*>*) = 0;
+     **/
+    typedef std::shared_ptr<HandleMap<AtomPtr>> HandMapPtr;
+    virtual void loadRepository(FILE*, HandMapPtr) = 0;
 
 
     /**
@@ -84,6 +88,7 @@ public:
 
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_SAVABLE_REPOSITORY_H

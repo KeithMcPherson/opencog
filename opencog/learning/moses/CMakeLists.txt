@@ -1,14 +1,19 @@
 # MOSES' version, must be updated manually
 SET (MOSES_VERSION_MAJOR 3)
 SET (MOSES_VERSION_MINOR 6)
-SET (MOSES_VERSION_PATCH 8)
+SET (MOSES_VERSION_PATCH 9)
 
 ADD_DEFINITIONS(-DMOSES_VERSION_MAJOR="${MOSES_VERSION_MAJOR}")
 ADD_DEFINITIONS(-DMOSES_VERSION_MINOR="${MOSES_VERSION_MINOR}")
 ADD_DEFINITIONS(-DMOSES_VERSION_PATCH="${MOSES_VERSION_PATCH}")
 
 # MOSES git describe, automatically updated
-EXECUTE_PROCESS(COMMAND git describe OUTPUT_VARIABLE MOSES_GIT_DESCRIBE)
+EXECUTE_PROCESS(
+	COMMAND git describe
+	OUTPUT_VARIABLE MOSES_GIT_DESCRIBE
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 IF (MOSES_GIT_DESCRIBE)
   ADD_DEFINITIONS(-DMOSES_GIT_DESCRIBE="${MOSES_GIT_DESCRIBE}")
 ENDIF (MOSES_GIT_DESCRIBE)
@@ -38,7 +43,11 @@ ADD_LIBRARY (moses SHARED STATIC
 	moses/types
 	moses/using
 
-	scoring/scoring
+	scoring/scoring_base
+	scoring/discriminating_bscore    
+	scoring/precision_bscore    
+    scoring/instance_scorer
+    scoring/bscores
 
 	metapopulation/metapopulation
 	metapopulation/metapop_params

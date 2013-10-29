@@ -29,9 +29,13 @@
 #include <string>
 
 #include <opencog/server/Request.h>
+#include <opencog/server/RequestClassInfo.h>
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class LoadModuleRequest : public Request
 {
@@ -48,12 +52,13 @@ public:
         return _cci;
     }
 
-    LoadModuleRequest();
+    LoadModuleRequest(CogServer&);
     virtual ~LoadModuleRequest();
     virtual bool execute(void);
     virtual bool isShell(void) {return info().is_shell;}
 };
 
+/** @}*/
 } // namespace 
 
 #endif // _OPENCOG_LOAD_MODULE_REQUEST_H

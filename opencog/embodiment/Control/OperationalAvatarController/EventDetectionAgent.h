@@ -37,7 +37,6 @@
 #include <opencog/learning/statistics/DataProvider.h>
 #include <boost/graph/adjacency_list.hpp>
 
-using namespace std;
 using namespace opencog::statistics;
 
 namespace opencog { namespace oac {
@@ -97,9 +96,9 @@ class EventDetectionAgent : public opencog::Agent
 {
 public:
 
-    EventDetectionAgent(AtomSpace &_atomSpace);
+    EventDetectionAgent(CogServer&);
 
-    ~EventDetectionAgent();
+    virtual ~EventDetectionAgent();
 
     void destroy();
 
@@ -113,7 +112,7 @@ public:
     }
 
     // Entry of the Agent, CogServer will invoke this function during its cycle
-    void run(opencog::CogServer * server);
+    virtual void run();
 
     // collect action corpora from PAI
     // the actionConcernedHandles contains all the nodes concerned an action
@@ -176,8 +175,9 @@ private:
     unsigned long cycleCount;  // Indicate how many times this mind
                                // agent has been executed
 
-
 };
+
+typedef std::shared_ptr<EventDetectionAgent> EventDetectionAgentPtr;
 
 }}
 

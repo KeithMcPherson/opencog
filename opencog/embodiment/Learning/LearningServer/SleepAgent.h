@@ -47,12 +47,15 @@ public:
         return _ci;
     }
 
-    ~SleepAgent();
-    SleepAgent();
+    virtual ~SleepAgent();
+    SleepAgent(CogServer&);
 
-    void run(opencog::CogServer *oac);
+    virtual void run();
 
 }; // class
+
+typedef std::shared_ptr<SleepAgent> SleepAgentPtr;
+
 } } // namespace opencog::learningserver
 
 #endif

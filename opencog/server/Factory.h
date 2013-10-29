@@ -31,8 +31,13 @@
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
-/* Defines the base class metadata information. For the base class, this
+class CogServer;
+
+/** Defines the base class metadata information. For the base class, this
  * consists of the class' id only. */
 struct ClassInfo
 {
@@ -43,7 +48,7 @@ struct ClassInfo
     ClassInfo(const std::string& s) : id(s) {};
 };
  
-/* Defines an abstract factory template, following Alexandrescu's pattern from
+/** Defines an abstract factory template, following Alexandrescu's pattern from
  * 'Modern C++ Design' */
 template< typename _BaseType >
 class AbstractFactory
@@ -51,11 +56,11 @@ class AbstractFactory
 public:
     explicit AbstractFactory() {};
     virtual ~AbstractFactory() {}
-    virtual _BaseType* create() const = 0;
+    virtual _BaseType* create(CogServer&) const = 0;
     virtual const ClassInfo& info() const = 0;
 }; 
 
-/* Defines a factory template, following Alexandrescu's pattern from 'Modern
+/** Defines a factory template, following Alexandrescu's pattern from 'Modern
  * C++ Design' */
 template< typename _Type, typename _BaseType >
 class Factory : public AbstractFactory<_BaseType>
@@ -63,11 +68,26 @@ class Factory : public AbstractFactory<_BaseType>
 public:
     explicit Factory() : AbstractFactory<_BaseType>() {}
     virtual ~Factory() {}
-    virtual _BaseType* create() const { return new _Type; }
+    virtual _BaseType* create(CogServer& cs) const { return new _Type(cs); }
     virtual const ClassInfo& info() const { return _Type::info(); }
 }; 
 
+/** Defines a single factory template to allow insert the same agent
+ * multiple times in the Cogserver schedule */
+template< typename _Type, typename _BaseType >
+class SingletonFactory : public Factory<_Type, _BaseType>
+{
+public:
+    explicit SingletonFactory() : Factory<_Type, _BaseType>() {}
+    virtual ~SingletonFactory() {}
+    virtual _BaseType* create(CogServer& cs) const {
+        static _BaseType* inst =  new _Type(cs);
+        return inst;
+    }
+};
 
+
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_FACTORY_H

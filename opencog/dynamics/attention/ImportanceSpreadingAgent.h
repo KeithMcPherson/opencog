@@ -35,6 +35,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_attention
+ *  @{
+ */
 
 class CogServer;
 
@@ -58,6 +61,9 @@ private:
 
     //! How much to multiply the HebbianLink TruthValue to convert to STI.
     float importanceSpreadingMultiplier;
+
+    //! Whether to spread STI across all types of Links and not just HebbianLinks
+    bool allLinksSpread;
 
     //! The 
     AttentionValue::sti_t stealingLimit;
@@ -96,9 +102,9 @@ public:
         return _ci;
     }
 
-    ImportanceSpreadingAgent();
+    ImportanceSpreadingAgent(CogServer&);
     virtual ~ImportanceSpreadingAgent();
-    virtual void run(CogServer *server);
+    virtual void run();
 
     /** Set minimal amount of STI necessary for an atom to have before it
      * spreads STI.
@@ -129,6 +135,9 @@ public:
     };
 }; // class
 
+typedef std::shared_ptr<ImportanceSpreadingAgent> ImportanceSpreadingAgentPtr;
+
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_IMPORTANCE_SPREADING_AGENT_H

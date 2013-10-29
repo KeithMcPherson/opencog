@@ -84,7 +84,7 @@ private:
     static Handle addGenericPropertyPred(AtomSpace& atomSpace,
                                          std::string predicateName,
                                          const HandleSeq& ll_out,
-                                         const TruthValue& tv,
+                                         TruthValuePtr tv,
                                          bool permanent = false,
                                          const Temporal& t = UNDEFINED_TEMPORAL);
 
@@ -239,7 +239,9 @@ public:
     static std::vector<Handle> getNodesByInheritanceLink(AtomSpace &atomSpace, Handle &hSecondOutgoing);
 
     // get all the nodes from EvaluationLinks, given the PredicateNode,and the second,third...outgoings of the listLink if any
-    static std::vector<Handle> getNodesByEvaluationLink(AtomSpace & atomSpace, string predicate, HandleSeq& hNonFirstOutgoings);
+    static std::vector<Handle> getNodesByEvaluationLink(AtomSpace &atomSpace, string predicate, HandleSeq& hNonFirstOutgoings);
+
+    static std::vector<Handle> getEvaluationLinks(AtomSpace &atomSpace, string predicate, HandleSeq &hfirstOutgoings);
 
     /**
      * Returns witin timestamps vector all EvaluationLinks for a given predicate
@@ -292,7 +294,7 @@ public:
      */
     static Handle setPredicateValue( AtomSpace& atomSpace,
                                      std::string predicateName,
-                                     const TruthValue &tv,
+                                     TruthValuePtr tv,
                                      Handle object1 = Handle::UNDEFINED,
                                      Handle object2 = Handle::UNDEFINED,
                                      Handle object3 = Handle::UNDEFINED );
@@ -474,7 +476,7 @@ public:
      * @param b The handle of the second object (optional). If this handle is
      *        not informed then a unary predicate is assumed
      */
-    static Handle getLatestEvaluationLink(const AtomSpace &atomSpace,
+    static Handle getLatestEvaluationLink(AtomSpace &atomSpace,
                                  std::string predicateName,
                                  Handle a,
                                  Handle b = Handle::UNDEFINED,
@@ -607,7 +609,7 @@ public:
     static Handle addPropertyPredicate(AtomSpace& atomSpace,
                                        std::string predicateName,
                                        Handle object,
-                                       const TruthValue &tv,
+                                       TruthValuePtr tv,
                                        bool permanent = false,
                                        const Temporal &t = UNDEFINED_TEMPORAL);
 
@@ -647,7 +649,7 @@ public:
                                        std::string predicateName,
                                        Handle a,
                                        Handle b,
-                                       const TruthValue& tv,
+                                       TruthValuePtr tv,
                                        const Temporal& t = UNDEFINED_TEMPORAL);
 
 
@@ -1210,7 +1212,7 @@ public:
             const std::string& frameName, 
             const std::string& frameInstanceName, 
             const std::map<std::string, Handle>& frameElementsValuesHandles, 
-            const TruthValue& truthValue,
+            TruthValuePtr truthValue,
             bool permanent = true );
 
     /**

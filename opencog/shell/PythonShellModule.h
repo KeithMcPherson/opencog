@@ -43,6 +43,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
 class PythonShellModule : public Module
 {
@@ -65,13 +68,14 @@ private:
         false, false)
 
 public:
-    PythonShellModule();
+    PythonShellModule(CogServer&);
     ~PythonShellModule();
 
-    virtual const char *id(void);
+    static const char *id(void);
     virtual void init(void);
 };
 
+/** @}*/
 }
 
 #endif // PYTHONSHELLMODULE_H

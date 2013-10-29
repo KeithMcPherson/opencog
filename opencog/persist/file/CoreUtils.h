@@ -32,6 +32,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_persist
+ *  @{
+ */
 
 /** Module for including any core-specific common utilities */
 class CoreUtils
@@ -51,9 +54,11 @@ public:
      * @param Handle which will be translated.
      * @param Table that maps from old to new handles.
      */
-    static void updateHandle(Handle *, HandleMap<Atom *> *) throw (RuntimeException);
+    typedef std::shared_ptr<HandleMap<AtomPtr>> HandMapPtr;
+    static void updateHandle(Handle*, HandMapPtr) throw (RuntimeException);
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_CORE_UTILS_H_

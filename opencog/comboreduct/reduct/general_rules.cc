@@ -50,7 +50,7 @@ void eval_constants::operator()(combo_tree& tr, combo_tree::iterator it) const
         if (is_indefinite_object(*it)) {
             //not sure we want that when indefinite_object is random
             vertex_seq empty;
-            *it = eval_throws_binding(empty, it, evaluator);
+            *it = eval_throws_binding(empty, it);
         }
         return;
     }
@@ -90,8 +90,8 @@ void eval_constants::operator()(combo_tree& tr, combo_tree::iterator it) const
     // evaluated to return valid results.
     vertex_seq empty;
     try {
-        *it = eval_throws_binding(empty, it, evaluator);
-    } catch (EvalException e) {
+        *it = eval_throws_binding(empty, it);
+    } catch (OverflowException& e) {
         *it = e.get_vertex();
     };
     tr.erase_children(it);

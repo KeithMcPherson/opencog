@@ -39,6 +39,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_persist
+ *  @{
+ */
 
 class SpaceServerSavable : public SavableRepository
 {
@@ -52,11 +55,13 @@ public:
     void setServer(SpaceServer *s) { server = s; }
 
     const char* getId() const;
-    void saveRepository(FILE *) const;
-    void loadRepository(FILE *fp, opencog::HandleMap<opencog::Atom*> *conv);
+    void saveRepository(FILE*) const;
+    void loadRepository(FILE*, HandMapPtr);
     void clear();
 
 };
+
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_SPACESERVER_SAVABLE_H

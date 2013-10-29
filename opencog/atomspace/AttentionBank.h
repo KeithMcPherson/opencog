@@ -25,27 +25,39 @@
 #ifndef _OPENCOG_ATTENTION_BANK_H
 #define _OPENCOG_ATTENTION_BANK_H
 
-#include "AttentionValue.h"
-#include <opencog/util/recent_val.h>
+#include <mutex>
 
-#include <boost/thread/mutex.hpp>
+#include <boost/signal.hpp>
+
+#include <opencog/util/recent_val.h>
+#include <opencog/atomspace/AttentionValue.h>
 
 namespace opencog
 {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
+
+class AtomTable;
 
 class AttentionBank
 {
-    AtomSpaceImpl *atomspace;
-    /* Boundary at which an atom is considered within the attentional
+    /** The connection by which we are notified of AV changes */
+    boost::signals::connection AVChangedConnection;
+    void AVChanged(Handle, AttentionValuePtr, AttentionValuePtr);
+
+    /**
+     * Boundary at which an atom is considered within the attentional
      * focus of opencog. Atom's with STI less than this value are
-     * not charged STI rent */
+     * not charged STI rent 
+     */
     AttentionValue::sti_t attentionalFocusBoundary;
 
     opencog::recent_val<AttentionValue::sti_t> maxSTI;
     opencog::recent_val<AttentionValue::sti_t> minSTI;
 
-    mutable boost::mutex lock_maxSTI;
-    mutable boost::mutex lock_minSTI;
+    mutable std::mutex lock_maxSTI;
+    mutable std::mutex lock_minSTI;
 
     /* These indicate the amount importance funds available in the
      * AtomSpace */
@@ -55,15 +67,11 @@ class AttentionBank
     long startingFundsSTI;
     long startingFundsLTI;
 
-    mutable boost::mutex lock_funds;
-
-    /*
-     * Remove stimulus from atom, only should be used when Atom is deleted.
-     */
-    void removeStimulus(Handle h);
+    mutable std::mutex lock_funds;
 
 public:
-    AttentionBank();
+    /** The table notifies us about AV changes */
+    AttentionBank(AtomTable*);
     ~AttentionBank();
 
     /**
@@ -100,6 +108,7 @@ public:
      * Get the LTI funds available in the AtomSpace pool.
      *
      * @return LTI funds available
+
      */
     long getLTIFunds() const;
 
@@ -163,38 +172,11 @@ public:
      */
     void updateMaxSTI(AttentionValue::sti_t m);
 
-    /** Retrieve the AttentionValue of an attention value holder */
-    const AttentionValue& getAV(AttentionValueHolder *avh) const;
-
-    /** Change the AttentionValue of an attention value holder */
-    void setAV(AttentionValueHolder *avh, const AttentionValue &av);
-
-    /** Change the Short-Term Importance of an attention value holder */
-    void setSTI(AttentionValueHolder *avh, AttentionValue::sti_t);
-
-    /** Change the Long-term Importance of an attention value holder */
-    void setLTI(AttentionValueHolder *avh, AttentionValue::lti_t);
-
     /** Change the Very-Long-Term Importance of an attention value holder */
-    //void setVLTI(AttentionValueHolder *avh, AttentionValue::vlti_t);
-
-    /** Incr the Very-Long-Term Importance of an attention value holder by 1*/
-    void incVLTI(AttentionValueHolder *avh);
-
-    /** Decr the Very-Long-Term Importance of an attention value holder by 1*/
-    void decVLTI(AttentionValueHolder *avh);
-
-    /** Retrieve the Short-Term Importance of an attention value holder */
-    AttentionValue::sti_t getSTI(AttentionValueHolder *avh) const;
-
-    /** Retrieve the Long-term Importance of a given Handle */
-    AttentionValue::lti_t getLTI(AttentionValueHolder *avh) const;
-
-    /** Retrieve the Very-Long-Term Importance of a given Handle */
-    AttentionValue::vlti_t getVLTI(AttentionValueHolder *avh) const;
-
+    //void setVLTI(AttentionValueHolderPtr avh, AttentionValue::vlti_t);
 };
 
+/** @}*/
 } //namespace opencog
 
 #endif // _OPENCOG_ATTENTION_BANK_H

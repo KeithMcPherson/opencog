@@ -55,9 +55,11 @@
 
 namespace opencog
 {
+/** \addtogroup grp_spacetime
+ *  @{
+ */
 
 class AtomSpace;
-class AtomSpaceImpl;
 class TimeServer;
 class SpaceServerSavable;
 
@@ -218,8 +220,8 @@ private:
     boost::signals::connection removedAtomConnection;
     boost::signals::connection addedAtomConnection;
 
-    void atomRemoved(AtomSpaceImpl*, Handle);
-    void atomAdded(AtomSpaceImpl*, Handle);
+    void atomRemoved(AtomPtr);
+    void atomAdded(Handle);
 
     // the current scene map, match the spaceMapNodeHandle
     SpaceMap* curMap;
@@ -289,9 +291,9 @@ private:
 
     Handle addPropertyPredicate(
         std::string predicateName,
-        Handle a,
-        Handle b,
-        const TruthValue &tv);
+        Handle,
+        Handle,
+        TruthValuePtr);
 
 
 };
@@ -580,6 +582,7 @@ private:
 //};
 
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_SPACESERVER_H

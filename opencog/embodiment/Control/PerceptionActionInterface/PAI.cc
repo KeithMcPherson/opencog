@@ -47,6 +47,7 @@
 
 #include <opencog/util/exceptions.h>
 #include <opencog/util/oc_assert.h>
+#include <opencog/util/macros.h>
 #include <opencog/util/Logger.h>
 #include <opencog/util/files.h>
 #include <opencog/util/StringManipulator.h>
@@ -135,7 +136,8 @@ PAI::PAI(AtomSpace& _atomSpace, ActionPlanSender& _actionSender,
 
     enableCollectActions = config().get_bool("ENABLE_ACTION_COLLECT");
 
-
+    trueConceptNode = AtomSpaceUtil::addNode(atomSpace, CONCEPT_NODE, "true");
+    falseConceptNode = AtomSpaceUtil::addNode(atomSpace, CONCEPT_NODE, "false");
 
 }
 
@@ -469,6 +471,12 @@ void PAI::sendSingleActionCommand(std::string& actionName, std::vector<ActionPar
             break;
         case ENTITY_CODE:
             break;
+        default:
+			// TODO: TNick: is this the right way of handling other values? 
+			// FUZZY_INTERVAL_INT_CODE
+			// FUZZY_INTERVAL_FLOAT_CODE
+			// NUMBER_OF_ACTION_PARAM_TYPES
+			break;
         }
 
         singleActionElement->appendChild(paraElement);
@@ -622,10 +630,46 @@ bool PAI::isActionDone(ActionID actionId, unsigned long sinceTimestamp) const
             atomSpace, ACTION_DONE_PREDICATE_NAME, actionId, sinceTimestamp);
 }
 
+bool PAI::isActionDone(ActionPlanID planId, unsigned int seqNumber) const
+{
+    ActionPlanMap::const_iterator it = pendingActionPlans.find(planId);
+    if (it != pendingActionPlans.end())
+    {
+        const ActionPlan& plan = it->second;
+        return plan.isDone(seqNumber);
+    }
+    else
+    {
+        // check if this plan is failed
+        if ( hasPlanFailed(planId))
+            return false;
+        else
+            return true; // the whole plan has been finshed successfully.
+    }
+}
+
 bool PAI::isActionFailed(ActionID actionId, unsigned long sinceTimestamp) const
 {
     return AtomSpaceUtil::isActionPredicatePresent(
             atomSpace, ACTION_FAILED_PREDICATE_NAME, actionId, sinceTimestamp);
+}
+
+bool PAI::isActionFailed(ActionPlanID planId, unsigned int seqNumber) const
+{
+    ActionPlanMap::const_iterator it = pendingActionPlans.find(planId);
+    if (it != pendingActionPlans.end())
+    {
+        const ActionPlan& plan = it->second;
+        return plan.isFailed(seqNumber);
+    }
+    else
+    {
+        // check if this plan is failed
+        if ( hasPlanFailed(planId))
+            return true;
+        else
+            return false; // the whole plan has been finshed successfully.
+    }
 }
 
 bool PAI::isActionTried(ActionID actionId, unsigned long sinceTimestamp) const
@@ -1117,29 +1161,28 @@ Handle PAI::processActionAvailability(DOMElement* signal)
         char* targetType = XMLString::transcode(signal->getAttribute(tag));
 
         opencog::Type targetTypeCode;
-
-        if (strlen(targetType))
+        OC_ASSERT(strlen(targetType) > 0);
+        
+        string targetTypeStr(targetType);
+        
+        internalTargetId = PAIUtils::getInternalId(targetName);
+        
+        if (targetTypeStr == "avatar")
         {
-            string targetTypeStr(targetType);
-
-            std::string internalTargetId = PAIUtils::getInternalId(targetName);
-
-            if (targetTypeStr == "avatar")
-            {
-                if (internalTargetId == avatarInterface.getPetId())
-                    targetTypeCode = PET_NODE;
-                else
-                    targetTypeCode = AVATAR_NODE;
-            }
-            else if (targetTypeStr == "accessory")
-            {
-                targetTypeCode = ACCESSORY_NODE;
-            }
+            if (internalTargetId == avatarInterface.getPetId())
+                targetTypeCode = PET_NODE;
             else
-            {
-                targetTypeCode = OBJECT_NODE; // Set a default type.
-            }
+                targetTypeCode = AVATAR_NODE;
         }
+        else if (targetTypeStr == "accessory")
+        {
+            targetTypeCode = ACCESSORY_NODE;
+        }
+        else
+        {
+            targetTypeCode = OBJECT_NODE; // Set a default type.
+        }
+
 
         // Add the target of this action into AtomSpace
         targetNode = AtomSpaceUtil::addNode(atomSpace, targetTypeCode, internalTargetId.c_str());
@@ -1472,7 +1515,7 @@ void PAI::processAgentActionWithParameters(Handle& agentNode, const string& inte
         OC_ASSERT(changedStateName != "");
         OC_ASSERT(newStateValNode != Handle::UNDEFINED,
                 "PAI:processAgentActionWithParameters: Got an invalid new state value handle when process a state change action. \n");
-        SimpleTruthValue tv(1.0, 1.0);
+        TruthValuePtr tv(SimpleTruthValue::createTV(1.0, 1.0));
 
         Handle newStateEvalLink = AtomSpaceUtil::addPropertyPredicate(atomSpace, changedStateName, targetNode, newStateValNode,tv,Temporal(tsValue));
 
@@ -1483,7 +1526,8 @@ void PAI::processAgentActionWithParameters(Handle& agentNode, const string& inte
     }
     else
         eventTYpe = oac::EVENT_TYPE_ACTION;
-
+	OC_UNUSED(eventTYpe);
+	
     // Jared    
     // Make an AndLink with the relevant Handles (or just the links). Fishgram likes having them all in one place,
     // while PLN may find it useful to have them together or separate.
@@ -2426,7 +2470,7 @@ void PAI::processMapInfo(DOMElement * element, HandleSeq &toUpdateHandles)
                 }
 
                 AtomSpaceUtil::setPredicateValue( atomSpace, "material",
-                                                  SimpleTruthValue( 1.0, 1.0 ), objectNode, materialConceptNode );
+                                                  SimpleTruthValue::createTV( 1.0, 1.0 ), objectNode, materialConceptNode );
             }
 
              //texture property
@@ -2443,7 +2487,7 @@ void PAI::processMapInfo(DOMElement * element, HandleSeq &toUpdateHandles)
                 }
 
                 AtomSpaceUtil::setPredicateValue( atomSpace, "texture",
-                                                  SimpleTruthValue( 1.0f, 1.0f ), objectNode, textureConceptNode );
+                                                  SimpleTruthValue::createTV( 1.0f, 1.0f ), objectNode, textureConceptNode );
             }
             
             //color properties
@@ -2484,7 +2528,7 @@ void PAI::processMapInfo(DOMElement * element, HandleSeq &toUpdateHandles)
             Handle agent = AtomSpaceUtil::getAgentHandle( atomSpace, avatarInterface.getPetId( ) );
             if ( agent != objectNode ) { // an agent cannot see himself
                 AtomSpaceUtil::setPredicateValue( atomSpace, "inside_pet_fov",
-                                                  SimpleTruthValue( (isObjectInsidePetFov ? 1.0f : 0.0f), 1.0f ), agent, objectNode );
+                                                  SimpleTruthValue::createTV( (isObjectInsidePetFov ? 1.0f : 0.0f), 1.0f ), agent, objectNode );
             } // if
 
             addPropertyPredicate(std::string("is_moving"), objectNode, moving);
@@ -2754,8 +2798,7 @@ Handle PAI::addActionPredicate(const char* predicateName, const PetAction& actio
     evalLinkOutgoing.push_back(predicateListLink);
     Handle evalLink = AtomSpaceUtil::addLink(atomSpace, EVALUATION_LINK, evalLinkOutgoing);
 
-    SimpleTruthValue tv(1,1e35);
-    Handle atTimeLink = timeServer().addTimeInfo(evalLink, timestamp,tv);
+    Handle atTimeLink = timeServer().addTimeInfo(evalLink, timestamp, TruthValue::TRUE_TV());
     AtomSpaceUtil::updateLatestPetActionPredicate(atomSpace, atTimeLink, predicateNode);
 
     return atTimeLink;
@@ -2909,11 +2952,11 @@ Rotation PAI::addRotationPredicate(Handle objectNode, unsigned long timestamp,
 void PAI::addPropertyPredicate(std::string predicateName, Handle objectNode, bool propertyValue, bool permanent)
 {
 
-    SimpleTruthValue tv(0.0, 1.0);
+    TruthValuePtr tv(SimpleTruthValue::createTV(0.0, 1.0));
 
     // if predicate is true set its TV to 1.0, otherwise leave it 0.0
     if (propertyValue) {
-        tv.setMean(1.0);
+        tv = SimpleTruthValue::createTV(1.0, 1.0);
     }
 
     logger().fine("PAI - Adding predName: %s, value: %d, obj: %s",
@@ -2921,6 +2964,13 @@ void PAI::addPropertyPredicate(std::string predicateName, Handle objectNode, boo
                  atomSpace.getName(objectNode).c_str());
 
     AtomSpaceUtil::addPropertyPredicate(atomSpace, predicateName, objectNode, tv, permanent);
+
+    // for test: because some of our processing agents using truthvalue to check a boolean predicate, some are using Evaluaction value "true" "false" to check
+    // so we need to add both
+    if (propertyValue)
+        AtomSpaceUtil::addPropertyPredicate(atomSpace, predicateName, objectNode, trueConceptNode,tv, permanent);
+    else
+        AtomSpaceUtil::addPropertyPredicate(atomSpace, predicateName, objectNode, falseConceptNode,tv, permanent);
 }
 
 void PAI::addInheritanceLink(std::string conceptNodeName, Handle subNodeHandle, bool inheritanceValue)
@@ -2938,7 +2988,7 @@ void PAI::addInheritanceLink(std::string conceptNodeName, Handle subNodeHandle, 
         seq.push_back(conceptNodeHandle);
 
         Handle link = AtomSpaceUtil::addLink(atomSpace, INHERITANCE_LINK, seq, true);
-        atomSpace.setTV(link, SimpleTruthValue(1.0, 1.0));
+        atomSpace.setTV(link, SimpleTruthValue::createTV(1.0, 1.0));
     }
 }
 
@@ -3108,16 +3158,16 @@ void PAI::addSemanticStructure(Handle objectNode,
     typeName[0] = std::toupper(typeName[0]);
 
     // Add semantic structure into atomspace, used for language comprehension.
-    Handle objSemeNode = atomSpace.addNode(SEME_NODE, entityId , SimpleTruthValue(1, 1));
+    Handle objSemeNode = atomSpace.addNode(SEME_NODE, entityId , SimpleTruthValue::createTV(1, 1));
     Handle objWordNode = atomSpace.addNode(WORD_NODE, entityClass);
-    Handle objClassNode = atomSpace.addNode(CONCEPT_NODE, entityClass, SimpleTruthValue(1, 1));
+    Handle objClassNode = atomSpace.addNode(CONCEPT_NODE, entityClass, SimpleTruthValue::createTV(1, 1));
         
     // Create the inheritance link
-    Handle objectType = atomSpace.addNode(CONCEPT_NODE, typeName, SimpleTruthValue(1, 1));
+    Handle objectType = atomSpace.addNode(CONCEPT_NODE, typeName, SimpleTruthValue::createTV(1, 1));
     HandleSeq inheritance(2);
     inheritance[0] = objSemeNode;
     inheritance[1] = objectType;
-    Handle link = atomSpace.addLink(INHERITANCE_LINK, inheritance, SimpleTruthValue(1, 1));
+    Handle link = atomSpace.addLink(INHERITANCE_LINK, inheritance, SimpleTruthValue::createTV(1, 1));
     atomSpace.setLTI(link, 1);
 
     HandleSeq classReference(2);
@@ -3146,7 +3196,7 @@ void PAI::addSemanticStructure(Handle objectNode,
         inheritance[1] = objectType;
 
         Handle link = atomSpace.addLink(INHERITANCE_LINK, inheritance, 
-                SimpleTruthValue(1, 1));
+                SimpleTruthValue::createTV(1, 1));
         atomSpace.setLTI(link, 1);
     }
 
@@ -3157,7 +3207,7 @@ void PAI::addSemanticStructure(Handle objectNode,
         inheritance[1] = objClassNode;
 
         Handle link = atomSpace.addLink(INHERITANCE_LINK, inheritance, 
-                SimpleTruthValue(1, 1));
+                SimpleTruthValue::createTV(1, 1));
         atomSpace.setLTI(link, 1);
     }
     
@@ -3212,7 +3262,7 @@ Handle PAI::addPhysiologicalFeeling(const string petID,
     Handle atTimeLink = timeServer().addTimeInfo(evalLink, timestamp);
 
     // count=1, i.e. one observation of this biological urge
-    atomSpace.setTV(atTimeLink,SimpleTruthValue((strength_t)level, 1));
+    atomSpace.setTV(atTimeLink,SimpleTruthValue::createTV((strength_t)level, 1));
     atomSpace.setSTI(atTimeLink, sti); 
 
     AtomSpaceUtil::updateLatestPhysiologicalFeeling(atomSpace, atTimeLink, feelingNode);
@@ -3241,7 +3291,7 @@ Handle PAI::addPhysiologicalFeeling(const string petID,
                                                      "#Biological_urge", 
                                                      frameInstanceName,
                                                      elements, 
-                                                     SimpleTruthValue( (level < 0.5) ? 0.0 : level, 1.0 )
+                                                     SimpleTruthValue::createTV( (level < 0.5) ? 0.0 : level, 1.0 )
                                                     );
     } else {
         Handle predicateNode = atomSpace.getHandle(PREDICATE_NODE, frameInstanceName);
@@ -3266,7 +3316,7 @@ Handle PAI::addOwnershipRelation(const Handle owner, const Handle owned, bool is
     Handle evalLink = AtomSpaceUtil::addLink(atomSpace, EVALUATION_LINK, evalLinkOutgoing, isPetObject);
 
     // set predicate evaluation true
-    atomSpace.setTV(evalLink, SimpleTruthValue(1.0f, 0.0f));
+    atomSpace.setTV(evalLink, SimpleTruthValue::createTV(1.0f, 0.0f));
 
     // No time info for now - UNCOMMENT if ownership needs time info
     //atomSpace.addTimeInfo( evalLink, timestamp);
@@ -3746,6 +3796,8 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
     bool isToy = getBooleanProperty(properties, IS_TOY_ATTRIBUTE);
     bool isFoodbowl = getBooleanProperty(properties, FOOD_BOWL_ATTRIBUTE);
     bool isWaterbowl = getBooleanProperty(properties, WATER_BOWL_ATTRIBUTE);
+    bool isPickupable = getBooleanProperty(properties, PICK_UP_ABLE_ATTRIBUTE);
+
     const std::string& color_name = queryMapInfoProperty(properties, COLOR_NAME_ATTRIBUTE);
 
     if (isEdible)
@@ -3764,6 +3816,7 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
     addPropertyPredicate(std::string("is_edible"), objectNode, isEdible, true);
     addPropertyPredicate(std::string("is_drinkable"), objectNode, isDrinkable, true);
     addPropertyPredicate(std::string("is_toy"), objectNode, isToy, true);
+    addPropertyPredicate(std::string("is_pickupable"), objectNode, isPickupable, true);
 
     // Add the inheritance link to mark the family of this entity.
     addInheritanceLink(std::string("pet_home"), objectNode, isHome);
@@ -3784,7 +3837,7 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
     Handle agentNode = AtomSpaceUtil::getAgentHandle(atomSpace, avatarInterface.getPetId());
     if (agentNode != objectNode) { // an agent cannot see itself
         AtomSpaceUtil::setPredicateValue(atomSpace, "inside_pet_fov",
-                                        SimpleTruthValue((isVisible ? 1.0f : 0.0f), 1.0f), 
+                                        SimpleTruthValue::createTV((isVisible ? 1.0f : 0.0f), 1.0f), 
                                         agentNode, objectNode);
     } // if
 
@@ -3804,7 +3857,7 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
         atomSpace.setLTI(referenceLink, 1);
 
         AtomSpaceUtil::setPredicateValue(atomSpace, "material",
-                                          SimpleTruthValue(1.0, 1.0), objectNode, materialConceptNode);
+                                          SimpleTruthValue::createTV(1.0, 1.0), objectNode, materialConceptNode);
     } // if
 
     // Add color property predicate
@@ -3823,7 +3876,7 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
         atomSpace.setLTI(referenceLink, 1);
 
         AtomSpaceUtil::setPredicateValue(atomSpace, "color_name",
-                                          SimpleTruthValue(1.0, 1.0), objectNode, colorNameConceptNode);
+                                          SimpleTruthValue::createTV(1.0, 1.0), objectNode, colorNameConceptNode);
     } // if
 
     // Add texture property predicate
@@ -3840,7 +3893,7 @@ void PAI::addEntityProperties(Handle objectNode, bool isSelfObject, const MapInf
         atomSpace.setLTI(referenceLink, 1);
 
         AtomSpaceUtil::setPredicateValue(atomSpace, "texture",
-                                          SimpleTruthValue(1.0f, 1.0f), objectNode, textureConceptNode);
+                                          SimpleTruthValue::createTV(1.0f, 1.0f), objectNode, textureConceptNode);
     } // if
 
     /* TODO
@@ -4089,7 +4142,7 @@ void PAI::processExistingStateInfo(DOMElement* element)
         return;
     }
 
-    SimpleTruthValue tv(1.0, 1.0);
+    TruthValuePtr tv(SimpleTruthValue::createTV(1.0, 1.0));
 
     string stateNameStr(stateName);
     AtomSpaceUtil::addPropertyPredicate(atomSpace, stateNameStr, objectHandle, valueHandle,tv,Temporal(tsValue));

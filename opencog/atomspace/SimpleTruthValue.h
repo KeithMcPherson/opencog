@@ -34,7 +34,14 @@
 
 namespace opencog
 {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
 
+class SimpleTruthValue;
+typedef std::shared_ptr<SimpleTruthValue> SimpleTruthValuePtr;
+
+//! a TruthValue that stores a mean and the number of observations (strength and confidance)
 class SimpleTruthValue : public TruthValue
 {
 #ifdef ZMQ_EXPERIMENT
@@ -60,13 +67,9 @@ public:
     SimpleTruthValue(const TruthValue&);
     SimpleTruthValue(SimpleTruthValue const&);
 
-    SimpleTruthValue* clone() const;
-    SimpleTruthValue& operator=(const TruthValue& rhs)
-    throw (RuntimeException);
-
     virtual bool operator==(const TruthValue& rhs) const;
 
-    static SimpleTruthValue* fromString(const char*);
+    static TruthValuePtr fromString(const char*);
 
     /// Heuristic to compute the count given the confidence (according
     /// to the PLN book)
@@ -80,18 +83,33 @@ public:
     /// where k is the look-ahead
     static confidence_t countToConfidence(count_t);
 
-    float toFloat() const;
     std::string toString() const;
     TruthValueType getType() const;
 
     strength_t getMean() const;
     count_t getCount() const;
     confidence_t getConfidence() const;
-    void setMean(strength_t);
-    void setCount(count_t);
-    void setConfidence(confidence_t);
+
+    static SimpleTruthValuePtr createSTV(strength_t mean, count_t count)
+    {
+        return std::make_shared<SimpleTruthValue>(mean, count);
+    }
+    static TruthValuePtr createTV(strength_t mean, count_t count)
+    {
+        return std::static_pointer_cast<TruthValue>(createSTV(mean, count));
+    }
+
+    TruthValuePtr clone() const
+    {
+        return std::make_shared<SimpleTruthValue>(*this);
+    }
+    TruthValue* rawclone() const
+    {
+        return new SimpleTruthValue(*this);
+    }
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_SIMPLE_TRUTH_VALUE_H_

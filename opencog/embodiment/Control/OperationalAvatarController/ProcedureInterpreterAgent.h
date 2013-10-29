@@ -39,7 +39,7 @@ private:
 
 public:
 
-    ProcedureInterpreterAgent();
+    ProcedureInterpreterAgent(CogServer&);
     virtual ~ProcedureInterpreterAgent();
     void setInterpreter(Procedure::ProcedureInterpreter*);
 
@@ -51,9 +51,11 @@ public:
         return _ci;
     }
 
-    void run(opencog::CogServer *server);
+    virtual void run();
 
 }; // class
+
+typedef std::shared_ptr<ProcedureInterpreterAgent> ProcedureInterpreterAgentPtr;
 
 } } // namespace opencog::oac
 

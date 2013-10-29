@@ -39,7 +39,7 @@
 
 using namespace opencog;
 
-ImprintAgent::ImprintAgent() : epsilon(Pattern(0,0))
+ImprintAgent::ImprintAgent(CogServer& cs) : Agent(cs), epsilon(Pattern(0,0))
 {
     static const std::string defaultConfig[] = {
 //        "ECAN_CONVERT_LINKS","false",
@@ -71,25 +71,26 @@ Logger* ImprintAgent::getLogger()
 }
 
 void ImprintAgent::setPattern(Pattern _epsilon)
-{ epsilon = _epsilon; }
-
-void ImprintAgent::run(CogServer *server)
 {
-    //AtomSpace *a = (static_cast<HopfieldServer&>(server())).getAtomSpace();
-    //a->getNormalisedSTI((static_cast<HopfieldServer&>(server())).hGrid[j],false);
-    HopfieldServer* hs = dynamic_cast<HopfieldServer*>(server);
+    epsilon = _epsilon;
+}
+
+void ImprintAgent::run()
+{
+    HopfieldServer* hs = dynamic_cast<HopfieldServer*>(&_cogserver);
+    // AtomSpace& a = hs->getAtomSpace();
+    //a.getNormalisedSTI((static_cast<HopfieldServer&>(server())).hGrid[j],false);
     int n = hs->width * hs->height;
     assert(n == epsilon.size());
     stim_t stimulusAmount = 1;
     if (epsilon.activity() > 0) {
-        stimulusAmount = server->getAtomSpace().getAttentionBank().getSTI(this) / epsilon.activity(); 
+        stimulusAmount = getAV()->getSTI() / epsilon.activity();
         if (stimulusAmount == 0) stimulusAmount++;
     }
     for (int i = 0; i < n; i++) {
         if (hs->options->keyNodes && hs->hGridKey[i]) continue; // Don't encode onto key nodes
         stimulateAtom( hs->hGrid[i], stimulusAmount * epsilon[i] );
     }
-
 }
 
 

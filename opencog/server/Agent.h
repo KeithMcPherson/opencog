@@ -26,6 +26,7 @@
 #define _OPENCOG_AGENT_H
 
 #include <string>
+#include <unordered_map>
 
 #include <opencog/server/Factory.h>
 #include <opencog/atomspace/AtomSpace.h>
@@ -33,8 +34,12 @@
 
 namespace opencog
 {
+/** \addtogroup grp_server
+ *  @{
+ */
 
-typedef boost::unordered_map<Handle, stim_t> AtomStimHashMap;
+typedef short stim_t;
+typedef std::unordered_map<Handle, stim_t, handle_hash> AtomStimHashMap;
 
 class CogServer;
 class AtomSpaceImpl;
@@ -97,10 +102,13 @@ class AtomSpaceImpl;
  * carry out other admin tasks before and after each cycle, without subclasses
  * needing to carry these out themselves unless they had specific reason to.
  */
-class Agent : public AttentionValueHolder
+class Agent
 {
 
 protected:
+    CogServer& _cogserver;
+
+    AttentionValuePtr _attentionValue;
 
     /** The agent's frequency. Determines how often the opencog server should
      *  schedule this agent. A value of 1 (the default) means that the agent
@@ -128,19 +136,19 @@ protected:
     boost::signals::connection conn;
 
     /** called by AtomTable via a boost:signal when an atom is removed. */
-    void atomRemoved(AtomSpaceImpl* a, Handle h);
+    void atomRemoved(AtomPtr);
 
 public:
 
     /** Agent's constructor. By default, initializes the frequency to 1. */
-    Agent(const unsigned int f = 1);    
+    Agent(CogServer&, const unsigned int f = 1);    
 
     /** Agent's destructor */
     virtual ~Agent();
 
     /** Abstract run method. Should be overriden by a derived agent with the
      *  actual agent's behavior. */
-    virtual void run(CogServer* server) = 0;
+    virtual void run() = 0;
 
     /** Returns the agent's frequency. */
     virtual int frequency(void) const { return _frequency; }
@@ -168,7 +176,7 @@ public:
     /**
      * Stimulate a Handle's atom.
      *
-     * @param atom handle
+     * @param h atom handle
      * @param amount of stimulus to give.
      * @return total stimulus given since last reset.
      */
@@ -208,16 +216,18 @@ public:
     /**
      * Get stimulus for Atom.
      *
-     * @param handle of atom to get stimulus for.
+     * @param h handle of atom to get stimulus for.
      * @return total stimulus since last reset.
      */
     stim_t getAtomStimulus(Handle h) const;
 
-
-
-
+    AttentionValuePtr getAV() { return _attentionValue; }
+    void setAV(AttentionValuePtr new_av) { _attentionValue = new_av; }
 }; // class
 
+typedef std::shared_ptr<Agent> AgentPtr;
+
+/** @}*/
 }  // namespace
 
 #endif // _OPENCOG_AGENT_H

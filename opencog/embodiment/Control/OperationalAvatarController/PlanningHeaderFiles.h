@@ -30,8 +30,8 @@
 #include <opencog/embodiment/Control/PerceptionActionInterface/ActionParamType.h>
 #include <set>
 
-#define ACCESS_DISTANCE "2.1"
-#define CLOSED_DISTANCE "0.9"
+#define ACCESS_DISTANCE "1.0"
+#define CLOSED_DISTANCE "1.0"
 #define PARAMETER_NUM 7
 
 using namespace std;
@@ -72,9 +72,9 @@ namespace oac {
 //     const pai::Entity entity_var[PARAMETER_NUM];
 //     const pai::Entity entity_vartest;
 
-     const ParamValue access_distance = ACCESS_DISTANCE;
-     const ParamValue SV_TRUE = "true";
-     const ParamValue SV_FALSE = "false";
+     const string access_distance = ACCESS_DISTANCE;
+     const string SV_TRUE = "true";
+     const string SV_FALSE = "false";
 
       const string bool_var[] = { "$bool_var0","$bool_var1", "$bool_var2","$bool_var3", "$bool_var4","$bool_var5","$bool_var6"};
       const  string  str_var[] = { "$str_var0","$str_var1", "$str_var2","$str_var3", "$str_var4","$str_var5","$str_var6" };
@@ -83,12 +83,12 @@ namespace oac {
 
       const  opencog::pai::Vector vector_var[] = {
          opencog::pai::Vector(999999.00000,999999.00000,999999.00000),
-         opencog::pai::Vector(999999.01000,999999.01000,999999.01000),
-         opencog::pai::Vector(999999.02000,999999.02000,999999.02000),
-         opencog::pai::Vector(999999.03000,999999.03000,999999.03000),
-         opencog::pai::Vector(999999.04000,999999.04000,999999.04000),
-         opencog::pai::Vector(999999.05000,999999.05000,999999.05000),
-         opencog::pai::Vector(999999.06000,999999.06000,999999.06000) };
+         opencog::pai::Vector(999998.00000,999999.00000,999999.00000),
+         opencog::pai::Vector(999997.00000,999999.00000,999999.00000),
+         opencog::pai::Vector(999996.00000,999999.00000,999999.00000),
+         opencog::pai::Vector(999995.00000,999999.00000,999999.00000),
+         opencog::pai::Vector(999994.00000,999999.00000,999999.00000),
+         opencog::pai::Vector(999993.00000,999999.00000,999999.00000) };
 
       const  opencog::pai::Entity entity_var[] = {
         opencog::pai::Entity("$entity_var0", "undefined"),

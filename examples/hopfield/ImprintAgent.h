@@ -68,9 +68,9 @@ public:
         return _ci;
     }
 
-    ImprintAgent();
+    ImprintAgent(CogServer&);
     virtual ~ImprintAgent();
-    virtual void run(CogServer *server);
+    virtual void run();
 
     /** Return the agent's logger object
      *
@@ -82,6 +82,8 @@ public:
     void setPattern(Pattern _epsilon);
 
 }; // class
+
+typedef std::shared_ptr<ImprintAgent> ImprintAgentPtr;
 
 } // namespace
 

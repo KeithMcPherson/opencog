@@ -31,26 +31,29 @@
 
 using namespace opencog;
 
-ImportanceSpreadingAgent::ImportanceSpreadingAgent()
+ImportanceSpreadingAgent::ImportanceSpreadingAgent(CogServer& cs) :
+    Agent(cs)
 {
     static const std::string defaultConfig[] = {
         "ECAN_DEFAULT_SPREAD_THRESHOLD","0",
         "ECAN_DEFAULT_SPREAD_MULTIPLIER","10.0",
+        "ECAN_ALL_LINKS_SPREAD","false",
         "", ""
     };
     setParameters(defaultConfig);
 
     spreadThreshold = (float) (config().get_double
                                ("ECAN_DEFAULT_SPREAD_THRESHOLD"));
+    allLinksSpread = config().get_bool("ECAN_ALL_LINKS_SPREAD");
 }
 
 ImportanceSpreadingAgent::~ImportanceSpreadingAgent()
 {
 }
 
-void ImportanceSpreadingAgent::run(CogServer* server)
+void ImportanceSpreadingAgent::run()
 {
-    a = &server->getAtomSpace();
+    a = &_cogserver.getAtomSpace();
     spreadImportance();
 }
 
@@ -93,6 +96,7 @@ int ImportanceSpreadingAgent::sumTotalDifference(Handle source, HandleSeq& links
     return totalDifference;
 }
 
+#define toFloat getMean
 // For one link
 int ImportanceSpreadingAgent::sumDifference(Handle source, Handle link)
 {
@@ -179,9 +183,12 @@ void ImportanceSpreadingAgent::spreadAtomImportance(Handle h)
 
     linksVector = a->getIncoming(h);
     IsHebbianLink isHLPred(a);
-    std::remove_if(linksVector.begin(),linksVector.end(),isHLPred);
-
-    logger().fine("  +Hebbian links found %d", linksVector.size());
+    if (allLinksSpread) {
+        logger().fine("  +Spreading across all links. Found %d", linksVector.size());
+    } else {
+      std::remove_if(linksVector.begin(),linksVector.end(),isHLPred);
+      logger().fine("  +Hebbian links found %d", linksVector.size());
+    }
 
     totalDifference = static_cast<float>(sumTotalDifference(h, linksVector));
     sourceSTI = a->getSTI(h);

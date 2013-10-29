@@ -35,6 +35,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_attention
+ *  @{
+ */
 
 class CogServer;
 
@@ -92,9 +95,9 @@ public:
     //! Percentage of AtomSpace to forget.
     float forgetPercentage;
 
-    ForgettingAgent();
+    ForgettingAgent(CogServer&);
     virtual ~ForgettingAgent();
-    virtual void run(CogServer *server);
+    virtual void run();
 
     void forget(float p);
 
@@ -105,6 +108,8 @@ public:
     Logger* getLogger();
 
 }; // class
+
+typedef std::shared_ptr<ForgettingAgent> ForgettingAgentPtr;
 
 /**
  * Comparison operator for using qsort on a list of Handles.
@@ -121,8 +126,8 @@ struct ForgettingLTIThenTVAscendingSort {
         AttentionValue::lti_t lti1, lti2;
         float tv1, tv2;
 
-        lti1 = a->getAV(h1).getLTI();
-        lti2 = a->getAV(h2).getLTI();
+        lti1 = a->getAV(h1)->getLTI();
+        lti2 = a->getAV(h2)->getLTI();
 
         tv1 = fabs(a->getMean(h1));
         tv2 = fabs(a->getMean(h2));
@@ -134,6 +139,7 @@ struct ForgettingLTIThenTVAscendingSort {
 
 };
 
+/** @}*/
 } // namespace
 
 #endif // _OPENCOG_FORGETTING_AGENT_H

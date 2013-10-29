@@ -24,7 +24,7 @@
 #include <opencog/atomspace/SimpleTruthValue.h>
 #include <opencog/spacetime/TimeServer.h>
 
-#include <opencog/web/json_spirit/json_spirit.h>
+#include <lib/json_spirit/json_spirit.h>
 
 #include "OAC.h"
 #include "PsiModulatorUpdaterAgent.h"
@@ -76,7 +76,7 @@ bool PsiModulatorUpdaterAgent::Modulator::updateModulator (AtomSpace & atomSpace
     // Update LatestLink containig latest modulator level
     std::string predicateName = this->modulatorName + "Modulator"; 
     Handle modulatorPredicateNode = atomSpace.addNode(PREDICATE_NODE, predicateName.c_str()); 
-    SimpleTruthValue stv = SimpleTruthValue(this->currentModulatorValue, 1); 
+    TruthValuePtr stv = SimpleTruthValue::createTV(this->currentModulatorValue, 1); 
 
     std::vector <Handle> outgoings;
     Handle listLink = atomSpace.addLink(LIST_LINK, outgoings); 
@@ -137,7 +137,7 @@ PsiModulatorUpdaterAgent::~PsiModulatorUpdaterAgent()
 #endif
 }
 
-PsiModulatorUpdaterAgent::PsiModulatorUpdaterAgent()
+PsiModulatorUpdaterAgent::PsiModulatorUpdaterAgent(CogServer& cs) : Agent(cs)
 {
     this->cycleCount = 0;
 
@@ -176,7 +176,7 @@ void PsiModulatorUpdaterAgent::publishUpdatedValue(Plaza & plaza,
 }
 #endif // HAVE_ZMQ
 
-void PsiModulatorUpdaterAgent::init(opencog::CogServer * server) 
+void PsiModulatorUpdaterAgent::init() 
 {
     logger().debug( "PsiModulatorUpdaterAgent::%s - Initialize the Agent [ cycle = %d ]",
                     __FUNCTION__, 
@@ -209,15 +209,14 @@ void PsiModulatorUpdaterAgent::init(opencog::CogServer * server)
         logger().debug("PsiModulatorUpdaterAgent::%s - Store the meta data of modulator '%s' successfully [cycle = %d]", 
                         __FUNCTION__, 
                         modulatorName.c_str(), 
-                        this->cycleCount
-                      );
+                        this->cycleCount);
     }// for
 
     // Initialize ZeroMQ publisher and add it to the plaza
 #ifdef HAVE_ZMQ
 
     // Get petId
-    OAC * oac = (OAC *) server;
+    OAC * oac = dynamic_cast<OAC *>(&_cogserver);
     const std::string & petId = oac->getPet().getPetId();
 
     Plaza & plaza = oac->getPlaza();
@@ -232,17 +231,15 @@ void PsiModulatorUpdaterAgent::init(opencog::CogServer * server)
     this->bInitialized = true;
 }
 
-void PsiModulatorUpdaterAgent::run(opencog::CogServer * server)
+void PsiModulatorUpdaterAgent::run()
 {
     this->cycleCount ++;
 
     logger().debug( "PsiModulatorUpdaterAgent::%s - Executing run %d times",
-                     __FUNCTION__, 
-                     this->cycleCount
-                  );
+                     __FUNCTION__, this->cycleCount);
 
     // Get OAC
-    OAC* oac = dynamic_cast<OAC*>(server);
+    OAC* oac = dynamic_cast<OAC*>(&_cogserver);
     OC_ASSERT(oac, "Did not get an OAC server");
 
     // Get AtomSpace
@@ -253,7 +250,7 @@ void PsiModulatorUpdaterAgent::run(opencog::CogServer * server)
 
     // Initialize the Agent (modulatorMetaMap etc)
     if ( !this->bInitialized )
-        this->init(server);
+        this->init();
 
     // Run modulator updaters
     foreach (Modulator & modulator, this->modulatorList) {

@@ -27,16 +27,17 @@
 #define _OPENCOG_EXCEPTIONS_H
 
 #include <string>
+#include <iostream>
 
 #include <stdarg.h>
 #include <string.h>
-
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#define TRACE_INFO " (" __FILE__ ":" TOSTRING(__LINE__) ")"
+#include "macros.h"
 
 namespace opencog 
 {
+/** \addtogroup grp_cogutil
+ *  @{
+ */
 
 /**
  * Base exception class from which all other exceptions should inheritates.
@@ -110,7 +111,7 @@ public:
      */
     RuntimeException() throw();
 
-}; // RuntimException
+}; // RuntimeException
 
 /**
  * Exception to be thrown when a XML operation (processing, creation) fails.
@@ -304,6 +305,13 @@ public:
     AssertionException(const char* fmt, va_list ap) throw();
 };
 
+inline std::ostream& operator<<(std::ostream& out, const StandardException& ex)
+{
+    out << ex.what();
+    return out;
+}
+
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_EXCEPTIONS_H

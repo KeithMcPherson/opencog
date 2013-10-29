@@ -83,7 +83,7 @@ private:
     count_t elapsedMoments;
 
 public:
-    EntityExperienceAgent();
+    EntityExperienceAgent(CogServer&);
     virtual ~EntityExperienceAgent();
 
     virtual const ClassInfo& classinfo() const {
@@ -96,9 +96,11 @@ public:
         return _ci;
     }
 
-    void run(opencog::CogServer *server);        
+    virtual void run();        
 
 };
+
+typedef std::shared_ptr<EntityExperienceAgent> EntityExperienceAgentPtr;
 
 } } // namespace opencog::oac
 

@@ -56,10 +56,10 @@ class ImitationLearningAgent : public opencog::Agent
     } learningTaskState;
 
 public:
-    ImitationLearningAgent();
-    ~ImitationLearningAgent();
+    ImitationLearningAgent(CogServer&);
+    virtual ~ImitationLearningAgent();
 
-    void run(CogServer* server);
+    virtual void run();
 
     virtual const ClassInfo& classinfo() const {
         return info();
@@ -114,6 +114,8 @@ private:
     std::string _avatar_id;
     std::string _trick_name;
 };
+
+typedef std::shared_ptr<ImitationLearningAgent> ImitationLearningAgentPtr;
 
 }} // ~namespace opencog::messaging
 

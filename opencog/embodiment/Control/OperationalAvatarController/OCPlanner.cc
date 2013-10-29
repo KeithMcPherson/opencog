@@ -23,6 +23,7 @@
 
 #include "OCPlanner.h"
 #include <opencog/util/oc_assert.h>
+#include <opencog/util/macros.h>
 #include "Inquery.h"
 #include <opencog/embodiment/Control/PerceptionActionInterface/PetAction.h>
 #include <opencog/embodiment/Control/PerceptionActionInterface/ActionType.h>
@@ -48,16 +49,16 @@ using namespace std;
 // this function need to be call after its forward rule node assigned, to calculate the depth of this state node
 // the root state node depth is 0, every state node's depth is its forward rule node's forward state node' depth +1
 // it its forward rule node has multiple forward state node, using the deepest one
-void StateNode::calculateNodeDepth()
+int StateNode::calculateNodeDepth()
 {
     if (this->depth == 0)
     {
-        return; // it's the goal state nodes
+        return 0; // it's the goal state nodes
     }
     else if (! this->forwardRuleNode)
     {
         this->depth = -1;
-        return;
+        return -1;
     }
 
     set<StateNode*>::iterator it;
@@ -71,13 +72,17 @@ void StateNode::calculateNodeDepth()
     }
 
     this->depth = deepest + 1;
+    return this->depth;
 
 }
 
 void RuleNode::updateCurrentAllBindings()
 {
-    currentAllBindings = currentBindingsFromForwardState;
-    currentAllBindings.insert(currentBindingsViaSelecting.begin(),currentBindingsViaSelecting.end());
+    if (currentBindingsFromForwardState.size() > 0)
+        currentAllBindings = currentBindingsFromForwardState;
+
+    if (currentBindingsViaSelecting.size() > 0)
+        currentAllBindings.insert(currentBindingsViaSelecting.begin(),currentBindingsViaSelecting.end());
 }
 
 bool findInStateNodeList(list<StateNode*> &stateNodeList, StateNode* state)
@@ -92,44 +97,160 @@ bool findInStateNodeList(list<StateNode*> &stateNodeList, StateNode* state)
     return false;
 }
 
+SpaceServer::SpaceMap* OCPlanner::getLatestSpaceMapFromBackwardStateNodes(RuleNode* ruleNode)
+{
+    // first , get the BackwardStateNodes
+    if (ruleNode->backwardLinks.size() == 0)
+        return &(spaceServer().getLatestMap());
+
+    set<StateNode*>::iterator it = ruleNode->backwardLinks.begin();
+    StateNode* lastedStateNode = NULL;
+    int smallestDepth = 99999;
+    for (; it != ruleNode->backwardLinks.end(); ++ it)
+    {
+        int depth = ((StateNode*)(*it))->calculateNodeDepth();
+        if ( depth <  smallestDepth)
+        {
+            smallestDepth = depth;
+            lastedStateNode = (StateNode*)(*it);
+        }
+    }
+
+    // get the curMap of the backward rule of this state node
+    if (lastedStateNode->backwardRuleNode != 0)
+        return lastedStateNode->backwardRuleNode->curMap;
+    else
+        return &(spaceServer().getLatestMap());
+}
 
 // @ bool &found: return if this same state is found in temporaryStateNodes
 // @ StateNode& *stateNode: the stateNode in temporaryStateNodes which satisfied or dissatisfied this goal
-bool OCPlanner::checkIfThisGoalIsSatisfiedByTempStates(State& goalState, bool &found, StateNode* &satstateNode)
+// @ ifCheckSameRuleNode: if avoid finding the state node generate by same rule node
+bool OCPlanner::checkIfThisGoalIsSatisfiedByTempStates(State& goalState, bool &found, StateNode *&satstateNode,RuleNode *forwardRuleNode,
+                                                       bool ifCheckSameRuleNode, StateNode* curStateNode)
+{
+    //   if curStateNode is 0, it means it has no backward links yet, so only check in startStateNodes.
+    //   if curStateNode is not 0, check temporaryStateNodes first , if cannot find in temporaryStateNodes, check in startStateNodes.
+    satstateNode = 0;
+    if ( (curStateNode != 0) && (curStateNode->backwardRuleNode != 0))
+    {
+        // find this state in temporaryStateNodes
+        if (findStateInTempStates(goalState,forwardRuleNode,satstateNode,ifCheckSameRuleNode,RuleNode::getDepthOfRuleNode(curStateNode->backwardRuleNode)))
+        {
+            //  check if this state has beed satisfied by the previous state nodes
+            float satisfiedDegree;
+            found = true;
+
+            State* vState = satstateNode->state;
+            if (vState->isSatisfied(goalState,satisfiedDegree))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            // cannot find this state in temporaryStateNodes
+            found = false;
+        }
+    }
+
+    // cannot find in temporaryStateNodes , try to find in startStateNodes
+    if (findStateInStartStateNodes(goalState,satstateNode))
+    {
+        //  check if this state has beed satisfied by the previous state nodes
+        float satisfiedDegree;
+        found = true;
+
+        State* vState = satstateNode->state;
+        if (vState->isSatisfied(goalState,satisfiedDegree))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        // cannot find this state in temporaryStateNodes
+        found = false;
+        return false;
+    }
+
+}
+
+//  return if this same state is found in temporaryStateNodes
+// @ StateNode& *stateNode: the stateNode in temporaryStateNodes which satisfied or dissatisfied this goal
+bool OCPlanner::findStateInTempStates(State& state, RuleNode *forwardRuleNode,StateNode* &stateNode,bool ifCheckSameRuleNode, int depth)
 {
     //  check if this state has beed satisfied by the previous state nodes
     list<StateNode*>::const_iterator vit = temporaryStateNodes.begin();
-    float satisfiedDegree;
+
+    // most closed state node, describing the same state of the input state
+    stateNode = 0;
+    int smallestDepth = depth;
 
     for (;vit != temporaryStateNodes.end(); vit ++)
     {
-        // there are possible mutiple same state nodes describe this same state in temporaryStateNodes,
-        // but the latest one is put in the front, so we can just check the first one we find
-        State* vState = ((StateNode*)(*vit))->state;
-        if (vState->isSameState(goalState))
-        {
-            found = true;
-            satstateNode = ((StateNode*)(*vit));
+        // only check the states backward then the input depth
+        // cuz the forward state won't affect the current state
+        int sdepth = ((StateNode*)(*vit))->calculateNodeDepth();
+        if (sdepth < depth)
+            continue;
 
-             if (vState->isSatisfied(goalState,satisfiedDegree))
-             {
-                 return true;
-             }
-             else
-             {
-                 return false;
-             }
+        // toBeImproved: there is some messy logic order problem in backward reasoning,
+        // sometimes need to add the effect states of a rulenode into temporaryStateNodes, before check the precondition states of this rule node
+        // so we if the input checked state node and the found state node are generated by same rule node (precondition and effect of this rule), skip it.
+        if (ifCheckSameRuleNode && (((StateNode*)(*vit))->backwardRuleNode == forwardRuleNode))
+            return false;
+
+        State* vState = ((StateNode*)(*vit))->state;
+        if (vState->isSameState(state))
+        {
+            if (sdepth < smallestDepth ) // get the most closed state node to the input depth
+            {
+                stateNode = ((StateNode*)(*vit));
+            }
 
         }
 
     }
 
     // cannot find this state in temporaryStateNodes
-    found = false;
-    satstateNode = 0;
+    if (stateNode != 0)
+        return true;
+    else
+        return false;
+
+}
+
+bool OCPlanner::findStateInStartStateNodes(State& state, StateNode* &stateNode)
+{
+    //  check if this state has beed satisfied by the previous state nodes
+    list<StateNode*>::const_iterator vit = startStateNodes.begin();
+
+    // most closed state node, describing the same state of the input state
+    stateNode = 0;
+
+    for (;vit != startStateNodes.end(); vit ++)
+    {
+        State* vState = ((StateNode*)(*vit))->state;
+        if (vState->isSameState(state))
+        {
+            stateNode = ((StateNode*)(*vit));
+            return true;
+        }
+    }
 
     return false;
+
 }
+
 
 int RuleNode::getDepthOfRuleNode(const RuleNode* r)
 {
@@ -175,6 +296,22 @@ OCPlanner::OCPlanner(AtomSpace *_atomspace, string _selfID, string _selfType)
         addRuleEffectIndex(r);
 
     }
+
+    // debug: print all the rule indexes:
+    cout<< "Debug: all rule indexes:" << std::endl;
+    map<string,multimap<float,Rule*> >::iterator itr;
+    for (itr = ruleEffectIndexes.begin(); itr != ruleEffectIndexes.end(); ++ itr)
+    {
+        cout<< itr->first <<":" << std::endl;
+        multimap<float,Rule*>::iterator iter;
+
+        for(iter =  ((multimap<float,Rule*>&)(itr->second)).begin(); iter !=  ((multimap<float,Rule*>&)(itr->second)).end(); ++ iter)
+        {
+            cout<< (((Rule*)(iter->second))->action)->getName() << std::endl;
+
+        }
+    }
+
 }
 
 OCPlanner::~OCPlanner()
@@ -192,20 +329,25 @@ void OCPlanner::addRuleEffectIndex(Rule* r)
 
         State* s = e->state;
 
-        map<string,map<float,Rule*> >::iterator it;
+        map<string,multimap<float,Rule*> >::iterator it;
         it = ruleEffectIndexes.find(s->name());
+
+        cout << "Debug: addRuleEffectIndex: State name:" << s->name() << std::endl;
 
         if (it == ruleEffectIndexes.end())
         {
-            map<float,Rule*> rules;
+            multimap<float,Rule*> rules;
             rules.insert(std::pair<float,Rule*>(effectIt->first,r));
-            ruleEffectIndexes.insert(std::pair<string , map<float,Rule*> >(s->name(),rules));
+            ruleEffectIndexes.insert(std::pair<string , multimap<float,Rule*> >(s->name(),rules));
         }
         else
         {
             // the map can make sure the rules are put in the list in the order of their probabilities from large to small
+            // map<string,map<float,Rule*> >
 
-            ((map<float,Rule*>)(it->second)).insert(std::pair<float,Rule*>(effectIt->first,r));
+            multimap<float,Rule*>& indexMap = ((multimap<float,Rule*>&)(it->second));
+
+            indexMap.insert(std::pair<float,Rule*>(effectIt->first,r));
 
         }
 
@@ -322,11 +464,9 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
 
     // clone a spaceMap for image all the the steps happen in the spaceMap, like building a block in some postion.
     // Cuz it only happens in imagination, not really happen, we should not really change in the real spaceMap
-    SpaceServer::SpaceMap* clonedMap = spaceServer().cloneTheLatestSpaceMap();
 
-    // Set this cloned spaceMap for Inquery
-    Inquery::setSpaceMap(clonedMap);
-
+    imaginarySpaceMaps.clear();
+    startStateNodes.clear();
     allRuleNodeInThisPlan.clear();
     unsatisfiedStateNodes.clear();
     temporaryStateNodes.clear();
@@ -345,9 +485,9 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
 
         newStateNode->backwardRuleNode = 0;
         newStateNode->forwardRuleNode = 0;
-        newStateNode->depth = 0;
+        newStateNode->depth = 999;
 
-        temporaryStateNodes.push_front(newStateNode);
+        startStateNodes.push_front(newStateNode);
 
     }
 
@@ -369,7 +509,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         bool found;
         StateNode* knownStateNode;
 
-        if (checkIfThisGoalIsSatisfiedByTempStates(*(newStateNode->state), found, knownStateNode))
+        if (checkIfThisGoalIsSatisfiedByTempStates(*(newStateNode->state), found, knownStateNode, 0,false))
         {
             goalStateNodes.push_back(newStateNode);
             temporaryStateNodes.push_front(newStateNode);
@@ -395,14 +535,23 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
     if (unsatisfiedStateNodes.size() == 0)
     {
         std::cout << "The goal is already satisfied! There is no need to do planning!" << std::endl;
-        return 0;
+        return "";
     }
+
+    int tryStepNum = 0;
 
     while(unsatisfiedStateNodes.size() != 0)
     {
         Rule* selectedRule = 0;
 
         curtimeStamp ++;
+
+        tryStepNum ++;
+        if (tryStepNum > 999)
+        {
+            std::cout << "Planning failed! Has tried more than 999 steps of planning, cannot find a plan!" << std::endl;
+            return "";
+        }
 
         // decide which state should be chosed to achieved first
         list<StateNode*>::iterator stateNodeIter;
@@ -416,6 +565,18 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         // the state node with deeper depth will be solved first
         StateNode* curStateNode = (StateNode*)(unsatisfiedStateNodes.back());
 
+        // out put selected subgoal debug info:
+        cout<<"Debug planning step " << tryStepNum <<": Selected subgoal :"<< curStateNode->state->name() << std::endl;
+
+        SpaceServer::SpaceMap* curImaginaryMap;
+        if (curStateNode->backwardRuleNode == 0)
+            curImaginaryMap = &(spaceServer().getLatestMap());
+        else
+            curImaginaryMap = curStateNode->backwardRuleNode->curMap;
+
+        // Set this cloned spaceMap for Inquery
+        Inquery::setSpaceMap(curImaginaryMap);
+
         // if the deepest state node has a depth of -1, it means all the required states have been satisfied
         if (curStateNode->depth == -1)
             break;
@@ -423,17 +584,32 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         // if we have not tried to achieve this state node before, find all the candidate rules first
         if (! curStateNode->hasFoundCandidateRules)
         {
-            map<string,map<float,Rule*> >::iterator it;
+            map<string,multimap<float,Rule*> >::iterator it;
             it = ruleEffectIndexes.find(curStateNode->state->name());
+            curStateNode->hasFoundCandidateRules = true;
+
+            // if there is not any rule related to this goal, continue to next loop;
+            // in fact in next loop,it will go into the else for processing the situation when curStateNode->hasFoundCandidateRules is true;
+            if (it == ruleEffectIndexes.end())
+                continue;
 
             // Select a rule to apply
 
-            map<float,Rule*> rules = (map<float,Rule*>)(it->second);
+            multimap<float,Rule*>& rules = (multimap<float,Rule*>&)(it->second);
 
             if ( rules.size() == 1)
             {
-                // if there is one rule to achieve this goal, just select it
-                selectedRule = (((map<float,Rule*>)(it->second)).begin())->second;
+                // if there is one rule related to this goal,
+                // check if it's negative or positive for this goal:
+                Rule* r = (((multimap<float,Rule*>)(it->second)).begin())->second;
+                bool isNegativeGoal, isDiffStateOwnerType;
+                checkNegativeStateNumBythisRule(r,curStateNode,isNegativeGoal, isDiffStateOwnerType);
+
+                if (isNegativeGoal || isDiffStateOwnerType) // if this rule will negative this goal, we should not choose to apply it.
+                    continue;
+
+                // this rule is positive for this goal, apply it.
+                selectedRule = r;
                 curStateNode->ruleHistory.push_back(selectedRule);
             }
             else
@@ -449,7 +625,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
                 // score = probability (50%) + lowest cost (50%)
                 // recursive rules have higher priority, so the score of a recursive rule will plus 0.5
 
-                map<float,Rule*> ::iterator ruleIt;
+                multimap<float,Rule*> ::iterator ruleIt;
 
                 for (ruleIt = rules.begin(); ruleIt != rules.end(); ruleIt ++)
                 {
@@ -467,8 +643,14 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
                     list< pair<float,Rule*> >::iterator canIt;
                     canIt = curStateNode->candidateRules.begin();
 
-                    // ground it only by this current state node,  to check if its other effects negative some of the other temporaryStateNodes
-                    int negativeNum = checkNegativeStateNumBythisRule(r,curStateNode);
+                    // ground it only by this current state node,  to check if its effect will negative this current selected goal state
+                    // and also check if other effects negative some of the other temporaryStateNodes
+                    bool isNegativeGoal, isDiffStateOwnerType;
+                    int negativeNum = checkNegativeStateNumBythisRule(r,curStateNode,isNegativeGoal,isDiffStateOwnerType);
+
+                    if (isNegativeGoal || isDiffStateOwnerType)
+                        continue; //  its effect will negative this current selected goal state, it's a opposite rule, should not add it into candidate rules
+
                     curRuleScore -= negativeNum;
 
                     while(true)
@@ -490,13 +672,18 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
 
                 }
 
+                // if cannot find a proper rule for this goal, continue to next loop;
+                // in fact in next loop,it will go into the else for processing the situation when curStateNode->hasFoundCandidateRules is true;
+                if (curStateNode->candidateRules.size() == 0)
+                    continue;
+
                 selectedRule = (curStateNode->candidateRules.begin())->second;
                 curStateNode->ruleHistory.push_back((curStateNode->candidateRules.begin())->second);
                 curStateNode->candidateRules.pop_front();
 
             }
 
-            curStateNode->hasFoundCandidateRules = true;
+
         }
         else //  we have  tried to achieve this state node before,which suggests we have found all the candidate rules
         {
@@ -645,7 +832,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
 
                             willBeAffecteds.push_back(oneAffectRecord);
 
-                            if (oneAffectRecord.size() < affectLeastStateNum)
+                            if (oneAffectRecord.size() < (std::size_t)affectLeastStateNum)
                             {
                                 index = i;
                                 affectLeastStateNum = oneAffectRecord.size();
@@ -692,6 +879,8 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         }
 
         // Till now have selected one unsatisfied state and the rule to applied to try to do one step backward chaining to satisfy it
+        // out put selected rule debug info:
+        cout<<"Debug planning step " << tryStepNum <<": Selected rule :"<< selectedRule->action->getName() << std::endl;
 
         // create a new RuleNode to apply this selected rule
         RuleNode* ruleNode = new RuleNode(selectedRule);
@@ -711,25 +900,63 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         // So we need to select suitable variables to ground them.
         groundARuleNodeBySelectingNonNumericValues(ruleNode);
 
+        if (ruleNode->ParamCandidates.size() > 0)
+        {
+            ruleNode->currentBindingsViaSelecting = ruleNode->ParamCandidates.front();
+            ruleNode->ParamCandidates.erase(ruleNode->ParamCandidates.begin());
+        }
+
         ruleNode->updateCurrentAllBindings();
 
         // ToBeImproved: currently it can only solve the numeric state with only one ungrounded Numeric variable
         selectValueForGroundingNumericState(ruleNode->originalRule,ruleNode->currentAllBindings,ruleNode);
 
+        // out put all the bindings:
+        cout<<"Debug planning step " << tryStepNum <<": All Variable bindings for rule :"<< ruleNode->originalRule->action->getName() << std::endl;
+        ParamGroundedMapInARule::iterator curparamit = ruleNode->currentAllBindings.begin();
+        for (; curparamit != ruleNode->currentAllBindings.end(); ++ curparamit)
+        {
+            cout << curparamit->first << "= " << ActionParameter::ParamValueToString(curparamit->second) << std::endl;
+        }
+
         recordOrginalParamValuesAfterGroundARule(ruleNode);
 
         //  find if there are other previous states besides curStateNode will be affected by this rule
         vector<EffectPair>::iterator effectItor;
+        vector<ParamValue>::iterator oldValItor = ruleNode->orginalGroundedParamValues.begin();
 
-        for (effectItor = ruleNode->originalRule->effectList.begin(); effectItor != ruleNode->originalRule->effectList.end(); ++ effectItor)
+        // out put all the effects debug info:
+        cout<<"Debug planning step " << tryStepNum <<": All effects for rule :"<< ruleNode->originalRule->action->getName() << std::endl;
+        int effectNum = 1;
+        for (effectItor = ruleNode->originalRule->effectList.begin(); effectItor != ruleNode->originalRule->effectList.end(); ++ effectItor, ++ oldValItor, ++effectNum)
         {
             Effect* e = (Effect*)(((EffectPair)(*effectItor)).second);
 
-            State* effState =  Rule::groundAStateByRuleParamMap(e->state, ruleNode->currentAllBindings);
+            State* effState =  Rule::groundAStateByRuleParamMap(e->state, ruleNode->currentAllBindings,true,false,(*oldValItor));
+            OC_ASSERT( ( effState != 0),
+                      "OCPlanner::doPlanning: effect state: %s is not able to be grounded.\n",
+                       e->state->name().c_str());
+
+            bool isEffectExecuted = Effect::executeEffectOp(effState,e,ruleNode->currentAllBindings);
+
+            OC_ASSERT( isEffectExecuted,
+                      "OCPlanner::doPlanning: in Effect::executeEffectOp of state: %s, the effect value is ungrounded.\n",
+                       e->state->name().c_str());
+
+            cout<<"Effect  " << effectNum <<": ";
+            outputStateInfo(effState, false);
+            cout << std::endl;
+            cout << "           [value changed]:  "
+                 << STATE_TYPE_NAME[e->state->stateType] << " " << ActionParameter::ParamValueToString(*oldValItor)
+                 << " -> " << STATE_TYPE_NAME[effState->stateType]<< " "<< effState->stateVariable->stringRepresentation()
+                 << std::endl;
 
             // skip the current state node
             if (curStateNode->state->isSameState(*effState) )
+            {
+                delete effState;
                 continue;
+            }
 
             // create a new state node for it
             StateNode* newStateNode = new StateNode(effState);
@@ -837,7 +1064,10 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         // and then check each precondition if it has already been satisfied, put it the unsatisfied one to the
         vector<State*>::iterator itpre;
         float satisfiedDegree;
-        for (itpre = ruleNode->originalRule->preconditionList.begin(); itpre != ruleNode->originalRule->preconditionList.end(); ++ itpre)
+        // out put all the effects debug info:
+        cout<<"Debug planning step " << tryStepNum <<": All preconditions for rule :"<< ruleNode->originalRule->action->getName() << std::endl;
+        int preConNum = 1;
+        for (itpre = ruleNode->originalRule->preconditionList.begin(); itpre != ruleNode->originalRule->preconditionList.end(); ++ itpre, ++preConNum)
         {
             State* ps = *itpre;
             State* groundPs = Rule::groundAStateByRuleParamMap(ps, ruleNode->currentAllBindings);
@@ -850,9 +1080,10 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
 
             // first check if this state has beed satisfied by the previous state nodes
             bool found = false;
+            bool isSat = false;
             StateNode* satStateNode;
 
-            bool satByTemp = checkIfThisGoalIsSatisfiedByTempStates(*groundPs, found, satStateNode);
+            bool satByTemp = checkIfThisGoalIsSatisfiedByTempStates(*groundPs, found, satStateNode,ruleNode,true);
 
             // if it's found in the temporaryStateNodes
             if (found)
@@ -870,6 +1101,8 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
                         newStateNode->backwardRuleNode =  satStateNode->backwardRuleNode;
                     }
 
+                    isSat = true;
+
                     // ToBeImproved: Need to check if there is any dependency loop,
                     // if any precondiction in the backward branch depends on any states in the forward branch of current rule node,
                     // it means two branches depend on each other. How to deal with this case?
@@ -884,6 +1117,8 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
                     if (newStateNode->backwardRuleNode)
                         newStateNode->backwardRuleNode->negativeForwardLinks.insert(newStateNode);
 
+                    isSat = false;
+
                 }
             }
             else
@@ -894,15 +1129,29 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
                 {
                     // add it to unsatisfied list
                     unsatisfiedStateNodes.push_front(newStateNode);
+                    isSat = false;
 
+                }
+                else
+                {
+                    isSat = true;
                 }
 
             }
 
+            cout<<"Precondition  " << preConNum <<": ";
+            outputStateInfo(groundPs, true);
+            if(isSat)
+                cout << " is satisfied :)" << std::endl;
+            else
+                cout << " is unsatisfied :(" << std::endl;
+
         }
 
         // execute the current rule action to change the imaginary SpaceMap if any action that involved changing space map
-        executeActionInImaginarySpaceMap(ruleNode,clonedMap);
+        // return the changed map
+        SpaceServer::SpaceMap* newCurMap = executeActionInImaginarySpaceMap(ruleNode,curImaginaryMap);
+        ruleNode->curMap = newCurMap;
 
     }
 
@@ -917,11 +1166,22 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
     allRuleNodeInThisPlan.end();
 
     // and then encapsule the action plac for each step and send to PAI
-    list<RuleNode*>::iterator planRuleNodeIt;
+    list<RuleNode*>::iterator planRuleNodeIt, lastStepIt;
     int stepNum = 1;
     for (planRuleNodeIt = allRuleNodeInThisPlan.begin(); planRuleNodeIt != allRuleNodeInThisPlan.end(); ++ planRuleNodeIt)
     {
         RuleNode* r = (RuleNode*)(*planRuleNodeIt);
+
+        SpaceServer::SpaceMap* backwardStepMap ;
+
+        if (stepNum == 1)
+            backwardStepMap = &(spaceServer().getLatestMap());
+        else
+        {
+            lastStepIt = planRuleNodeIt;
+            lastStepIt --;
+            backwardStepMap = ((RuleNode*)(*lastStepIt))->curMap;
+        }
 
         // generate the action series according to the planning network we have constructed in this planning process
         PetAction* originalAction = r->originalRule->action;
@@ -933,7 +1193,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         list<ActionParameter>::const_iterator paraIt;
         const list<ActionParameter>& params = originalAction->getParameters();
 
-        std::cout<<std::endl<<"Step No."<< stepNum << originalAction->getName();
+        std::cout<<std::endl<<"Step No."<< stepNum << ": "<< originalAction->getName();
 
         // for navigation actions, need to call path finder to create every step of it
         if ((originalAction->getType().getCode() == WALK_CODE) || (originalAction->getType().getCode() == MOVE_TO_OBJ_CODE) )
@@ -966,7 +1226,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
             else
             {
                 Entity entity1 = boost::get<Entity>(value);
-                targetPos = spaceServer().getLatestMap().getObjectLocation(entity1.id);
+                targetPos = backwardStepMap->getObjectLocation(entity1.id);
 
                 std::cout<< entity1.stringRepresentation()<<std::endl;
             }
@@ -977,7 +1237,7 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
             Vector v1 = boost::get<Vector>( r->orginalGroundedParamValues[1]);
             startPos = SpaceServer::SpaceMapPoint(v1.x,v1.y,v1.z);
 
-            opencog::world::PAIWorldWrapper::createNavigationPlanAction(oac->getPAI(),spaceServer().getLatestMap(),startPos,targetPos,planID);
+            opencog::world::PAIWorldWrapper::createNavigationPlanAction(oac->getPAI(),*backwardStepMap,startPos,targetPos,planID);
 
         }
         else
@@ -1013,17 +1273,28 @@ ActionPlanID OCPlanner::doPlanning(const vector<State*>& goal,const vector<State
         stepNum ++;
     }
 
+    std::cout<<std::endl;
+
     // Reset the spaceMap for inquery back to the real spaceMap
     Inquery::reSetSpaceMap();
+
+    // delete all imaginary space map
+    vector<SpaceServer::SpaceMap*>::iterator iMapIt = imaginarySpaceMaps.begin();
+    for (;iMapIt != imaginarySpaceMaps.end(); ++ iMapIt)
+    {
+        SpaceServer::SpaceMap* iMap = (SpaceServer::SpaceMap*)(*iMapIt);
+
+        if (iMap)
+            delete iMap;
+    }
 
     // todo: remove all the imaginary atoms in imaginaryHandles
 
     return planID;
 }
 
-
 // return how many states in the temporaryStateNodes will be Negatived by this rule
-int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardState)
+int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardState, bool& negativeGoal, bool &isDiffStateOwnerType)
 {
 
     RuleNode* tmpRuleNode = new RuleNode(rule);
@@ -1031,6 +1302,8 @@ int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardStat
     groundARuleNodeParametersFromItsForwardState(tmpRuleNode,fowardState);
 
     int num = 0;
+    negativeGoal = false;
+    isDiffStateOwnerType = false;
 
     // check all the effects:
     vector<EffectPair>::iterator effectItor;
@@ -1039,10 +1312,34 @@ int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardStat
     {
         Effect* e = (Effect*)(((EffectPair)(*effectItor)).second);
 
-        State* effState =  Rule::groundAStateByRuleParamMap(e->state, tmpRuleNode->currentAllBindings);
+        if (e->ifCheckStateOwnerType )
+        {
+            if (! e->state->isStateOwnerTypeTheSameWithMe( *(fowardState->state)) )
+            isDiffStateOwnerType = true;
+            return 10000;
+        }
+
+        State* effState =  Rule::groundAStateByRuleParamMap(e->state, tmpRuleNode->currentBindingsFromForwardState, true,false);
 
         if (! effState)
             continue;
+
+        if (! Effect::executeEffectOp(effState,e,tmpRuleNode->currentBindingsFromForwardState))
+        {
+            delete effState;
+            continue;
+        }
+
+        if (effState->isSameState(*(fowardState->state)))
+        {
+            float satDegree;
+            if (! effState->isSatisfied(*(fowardState->state),satDegree))
+            {
+                negativeGoal = true;
+                delete effState;
+                return 10000;
+            }
+        }
 
         list<StateNode*>::iterator sait;
 
@@ -1073,6 +1370,8 @@ int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardStat
                 ++ sait;
 
         }
+
+        delete effState;
     }
 
     delete tmpRuleNode;
@@ -1082,27 +1381,31 @@ int OCPlanner::checkNegativeStateNumBythisRule(Rule* rule, StateNode* fowardStat
 }
 
 // ToBeImproved: this function is very ugly...the right way is to add a callback function for each action to auto execute
-void OCPlanner::executeActionInImaginarySpaceMap(RuleNode* ruleNode,SpaceServer::SpaceMap* iSpaceMap)
+SpaceServer::SpaceMap* OCPlanner::executeActionInImaginarySpaceMap(RuleNode* ruleNode, SpaceServer::SpaceMap *iSpaceMap)
 {
     static int imaginaryBlockNum = 1;
 
     // currently we just cheat to enable the following actions
     // ToBeImproved: the right way is to add a callback function for each action to auto execute
 
+    SpaceServer::SpaceMap* newClonedMap = iSpaceMap;
+
     switch (ruleNode->originalRule->action->getType().getCode())
     {
         case pai::EAT_CODE:
         {
             // get the handle of the food to eat
+            newClonedMap = iSpaceMap->clone();
             string foodVarName = (ruleNode->originalRule->action->getParameters().front()).stringRepresentation();
             Entity foodEntity =  boost::get<Entity>((ruleNode->currentAllBindings)[foodVarName]);
             Handle foodH = AtomSpaceUtil::getEntityHandle(*atomSpace,foodEntity.id);
-            iSpaceMap->removeNoneBlockEntity(foodH);
+            newClonedMap->removeNoneBlockEntity(foodH);
             break;
         }
         case pai::MOVE_TO_OBJ_CODE:
         {
             // get the actor entity handle
+            newClonedMap = iSpaceMap->clone();
             string actorVarName0 = ActionParameter::ParamValueToString(ruleNode->originalRule->actor);
             Entity agent0 =  boost::get<Entity>((ruleNode->currentAllBindings)[actorVarName0]);
             Handle agentH0 = AtomSpaceUtil::getAgentHandle(*atomSpace,agent0.id);
@@ -1112,13 +1415,14 @@ void OCPlanner::executeActionInImaginarySpaceMap(RuleNode* ruleNode,SpaceServer:
             Entity target =  boost::get<Entity>((ruleNode->currentAllBindings)[targetVarName]);
             Handle targetH = AtomSpaceUtil::getAgentHandle(*atomSpace,target.id);
             // get new location it moves tol
-            spatial::BlockVector targetLocation = iSpaceMap->getObjectLocation(targetH);
-            iSpaceMap->updateNoneBLockEntityLocation(agentH0,targetLocation,curtimeStamp);
+            spatial::BlockVector targetLocation = newClonedMap->getObjectLocation(targetH);
+            newClonedMap->updateNoneBLockEntityLocation(agentH0,targetLocation,curtimeStamp);
             break;
         }
         case pai::WALK_CODE:
         {
             // get the actor entity handle
+            newClonedMap = iSpaceMap->clone();
             string actorVarName = ActionParameter::ParamValueToString(ruleNode->originalRule->actor);
             Entity agent =  boost::get<Entity>((ruleNode->currentAllBindings)[actorVarName]);
             Handle agentH = AtomSpaceUtil::getAgentHandle(*atomSpace,agent.id);
@@ -1127,22 +1431,30 @@ void OCPlanner::executeActionInImaginarySpaceMap(RuleNode* ruleNode,SpaceServer:
             string newPosVarName = (ruleNode->originalRule->action->getParameters().front()).stringRepresentation();
             Vector movedToVec = boost::get<Vector>((ruleNode->currentAllBindings)[newPosVarName]);
             spatial::BlockVector newPos(movedToVec.x,movedToVec.y,movedToVec.z);
-            iSpaceMap->updateNoneBLockEntityLocation(agentH,newPos,curtimeStamp);
+            newClonedMap->updateNoneBLockEntityLocation(agentH,newPos,curtimeStamp);
 
             break;
         }
         case pai::BUILD_BLOCK_CODE:
         {
+            newClonedMap = iSpaceMap->clone();
             // get the  location of block
             string blockBuildPposVarName = (ruleNode->originalRule->action->getParameters().front()).stringRepresentation();
             Vector buildVec = boost::get<Vector>((ruleNode->currentAllBindings)[blockBuildPposVarName]);
             spatial::BlockVector buildPos(buildVec.x,buildVec.y,buildVec.z);
             Handle iBlockH = AtomSpaceUtil::addNode(*atomSpace, IMAGINARY_STRUCTURE_NODE,"Imaginary_Block_" + imaginaryBlockNum++);
-            iSpaceMap->addSolidUnitBlock(buildPos,iBlockH);
+            newClonedMap->addSolidUnitBlock(buildPos,iBlockH);
             break;
         }
-
+        default:
+            // TODO: TNick: is this the right way of handling other codes?
+            break;
     }
+
+    if (newClonedMap != iSpaceMap)
+        imaginarySpaceMaps.push_back(newClonedMap);
+
+    return newClonedMap;
 
 }
 
@@ -1205,6 +1517,9 @@ void OCPlanner::undoActionInImaginarySpaceMap(RuleNode* ruleNode,SpaceServer::Sp
             iSpaceMap->removeSolidUnitBlock(iSpaceMap->getUnitBlockHandleFromPosition(buildPos));
             break;
         }
+        default:
+            // TODO: TNick: is this the right way of handling other codes?
+            break;
     }
 }
 
@@ -1306,7 +1621,7 @@ Rule* OCPlanner::unifyRuleVariableName(Rule* toBeUnifiedRule, State* forwardStat
     }
 
     if (effectIt == toBeUnifiedRule->effectList.end())
-        return false;
+        return 0;
 
     // check if all the stateOwner parameters grounded
     vector<ParamValue>::iterator f_ownerIt = forwardState->stateOwnerList.begin(); // state owner list in forward state
@@ -1424,6 +1739,9 @@ bool OCPlanner::groundARuleNodeParametersFromItsForwardState(RuleNode* ruleNode,
     Effect* e;
     State* s;
 
+    std::cout << "Debug: Begin grounding variables for rule: "<< ruleNode->originalRule->action->getName().c_str()
+              << " from its forward state " << forwardStateNode->state->name().c_str() << std::endl;
+
     // Todo:  need to check if all the non-variables/consts are the same to find the exact state rather than just check the state name()
     for (effectIt = ruleNode->originalRule->effectList.begin(); effectIt != ruleNode->originalRule->effectList.end(); ++ effectIt)
     {
@@ -1431,7 +1749,9 @@ bool OCPlanner::groundARuleNodeParametersFromItsForwardState(RuleNode* ruleNode,
 
         s = e->state;
         if (s->name() ==  forwardStateNode->state->name())
+        {
             break;
+        }
     }
 
     if (effectIt == ruleNode->originalRule->effectList.end())
@@ -1456,10 +1776,11 @@ bool OCPlanner::groundARuleNodeParametersFromItsForwardState(RuleNode* ruleNode,
         }
     }
 
-    // ground the state value
-    if (Rule::isParamValueUnGrounded(s->stateVariable->getValue()))
+    // don't need to ground the old state value itself
+    // just ground the effect op value
+    if (Rule::isParamValueUnGrounded(e->opParamValue))
     {
-        string variableName = ActionParameter::ParamValueToString(s->stateVariable->getValue());
+        string variableName = ActionParameter::ParamValueToString(e->opParamValue);
         map<string, ParamValue>::iterator paraIt = ruleNode->currentBindingsFromForwardState.find(variableName);
         if (paraIt == ruleNode->currentBindingsFromForwardState.end())
         {
@@ -1468,6 +1789,9 @@ bool OCPlanner::groundARuleNodeParametersFromItsForwardState(RuleNode* ruleNode,
             ruleNode->currentBindingsFromForwardState.insert(std::pair<string, ParamValue>(variableName,forwardStateNode->state->getParamValue()));
         }
     }
+
+    std::cout << "Debug: End grounding variables for rule: "<< ruleNode->originalRule->action->getName().c_str()
+              << " from its forward state " << forwardStateNode->state->name().c_str() << std::endl;
 
     return true;
 }
@@ -1718,6 +2042,8 @@ bool OCPlanner::groundARuleNodeBySelectingNonNumericValues(RuleNode *ruleNode)
     // and only select variables by pattern matching for the states before
 
     // find the last state in the list ParamCandidates, which needs no real-time inquery state , and not numeric
+
+    cout<<"Debug: groundARuleNodeBySelectingNonNumericValues() is finding candidate groups..." << std::endl;
     int number_easy_state = 0;
     list<UngroundedVariablesInAState>::iterator uvIt= ruleNode->curUngroundedVariables.begin();
     for (; uvIt != ruleNode->curUngroundedVariables.end(); ++ uvIt)
@@ -1772,19 +2098,25 @@ bool OCPlanner::groundARuleNodeBySelectingNonNumericValues(RuleNode *ruleNode)
             }
             vector<string> varNames;
             HandleSeq candidateListHandles = Inquery::findCandidatesByPatternMatching(ruleNode,indexesVector,varNames);
+            int candidateGroupNum = 1;
 
             if (candidateListHandles.size() != 0)
             {
+
                 foreach (Handle listH, candidateListHandles)
                 {
                     HandleSeq candidateHandlesInOneGroup = atomSpace->getOutgoing(listH);
                     ParamGroundedMapInARule oneGroupCandidate;
                     int index = 0;
 
+                    cout<<"CandidateGroup "<< candidateGroupNum ++ << std::endl;
+
                     foreach (Handle h, candidateHandlesInOneGroup)
                     {
                         ParamValue v = Inquery::getParamValueFromHandle(varNames[index],h);
                         oneGroupCandidate.insert(std::pair<string, ParamValue>(varNames[index],v));
+
+                        cout<<varNames[index]<< "= " << ActionParameter::ParamValueToString(v) << std::endl;
 
                         // Check if this group of candidates is able to ground some other need_real_time_inquery states
                         // and how many of these need_real_time_inquery state can be satisifed by this group of candidates
@@ -1805,7 +2137,7 @@ bool OCPlanner::groundARuleNodeBySelectingNonNumericValues(RuleNode *ruleNode)
                             {
                                 bool found;
                                 StateNode* satStateNode;
-                                if (checkIfThisGoalIsSatisfiedByTempStates(*groundedState,found,satStateNode))
+                                if (checkIfThisGoalIsSatisfiedByTempStates(*groundedState,found,satStateNode,0, false))
                                     numOfSat ++;
                                 else if (found)
                                     continue; // found in temp state list, but is not satisfied
@@ -1820,6 +2152,8 @@ bool OCPlanner::groundARuleNodeBySelectingNonNumericValues(RuleNode *ruleNode)
                                 }
 
                             }
+
+                            delete groundedState;
 
                         }
 
@@ -1854,10 +2188,14 @@ bool OCPlanner::groundARuleNodeBySelectingNonNumericValues(RuleNode *ruleNode)
 
     delete indexes;
 
+    cout<<"Debug: groundARuleNodeBySelectingNonNumericValues() found candidate group number totally: "<<ruleNode->ParamCandidates.size()<<std::endl;
+
+
     // Till now,  all the easy states have been dealed with, now we need to deal with numberic states if any
     // we won't ground the numeric states here, because it's too time-consuming,
     // we won't give all the possible combinations of numeric values and non-numeric values for candidates
 
+	return true;
 }
 
 // this should be called only after the currentAllBindings has been chosen
@@ -1899,6 +2237,8 @@ bool OCPlanner::selectValueForGroundingNumericState(Rule* rule, ParamGroundedMap
 
     vector<ParamValue> values = bs.bestNumericVariableInqueryFun(groundedState->stateOwnerList);
 
+    delete groundedState;
+
     if (values.size() == 0)
     {
         // cannot find a good value by this pre-defined inquery functions
@@ -1935,7 +2275,7 @@ bool OCPlanner::selectValueForGroundingNumericState(Rule* rule, ParamGroundedMap
             return false; // cannot find a unrecursiveRule to borrow from
 
         // ground this unrecursiveRule by the effectStateNode
-        Effect* e = rule->effectList.begin()->second;
+        /* Effect* e = */ rule->effectList.begin()->second;
 
         // ToBeImproved: currently only apply the borrowed rule in the first precondition of recursiveRule
         Rule* borrowedRule =  unifyRuleVariableName(unrecursiveRule, rule->preconditionList.front());
@@ -2028,19 +2368,56 @@ void OCPlanner::recordOrginalParamValuesAfterGroundARule(RuleNode* ruleNode)
 {
     vector<EffectPair>::iterator effectIt;
     Effect* e;
-    State* s;
 
     ruleNode->orginalGroundedParamValues.clear();
 
     for (effectIt = ruleNode->originalRule->effectList.begin(); effectIt != ruleNode->originalRule->effectList.end(); ++ effectIt)
     {
         e = effectIt->second;
-        s = e->state;
-        State* groundedState = Rule::groundAStateByRuleParamMap(s,ruleNode->currentAllBindings);
-        ruleNode->orginalGroundedParamValues.push_back(groundedState->getParamValue());
+        State* s = Rule::groundAStateByRuleParamMap(e->state, ruleNode->currentAllBindings,false,false);
+        OC_ASSERT( (s != 0),
+                  "OCPlanner::recordOrginalParamValuesAfterGroundARule: cannot ground state: %s!\n",
+                    s->name().c_str());
+
+        StateNode* stateNode;
+        if (findStateInTempStates(*s, 0, stateNode, false, RuleNode::getDepthOfRuleNode(ruleNode)))
+        {
+            ruleNode->orginalGroundedParamValues.push_back(stateNode->state->getParamValue());
+        }
+        else if (findStateInStartStateNodes(*s,stateNode))
+        {
+            ruleNode->orginalGroundedParamValues.push_back(stateNode->state->getParamValue());
+        }
+        else
+        {
+            ruleNode->orginalGroundedParamValues.push_back(s->getParamValue());
+        }
+
+        delete s;
+
     }
 }
 
+void OCPlanner::outputStateInfo(State* s,bool outPutStateValue)
+{
+    cout<< "State: "<< s->name() << " ( " ;
+    vector<ParamValue>::iterator ownerIt;
+    bool isFirstOne = true;
+    for (ownerIt = s->stateOwnerList.begin(); ownerIt != s->stateOwnerList.end(); ++ ownerIt)
+    {
+        if (! isFirstOne)
+            cout<<", ";
+        cout<< ActionParameter::ParamValueToString( (ParamValue&)(*ownerIt) );
+        isFirstOne = false;
+    }
+    cout<< " )";
+
+    if (outPutStateValue)
+    {
+        cout << " " << STATE_TYPE_NAME[s->stateType] << " " << s->stateVariable->stringRepresentation();
+    }
+
+}
 
 // a bunch of rules for test, load from c++ codes
 void OCPlanner::loadTestRulesFromCodes()
@@ -2183,8 +2560,6 @@ void OCPlanner::loadTestRulesFromCodes()
     // define variables:
     ParamValue var_obj = entity_var[0];
     ParamValue float_dis = float_var[0];
-
-    ParamValue var_pos = vector_var[0];
     ParamValue var_oldpos = vector_var[1];
 
     // precondition 1:There exists a path from the agent to object
@@ -2203,7 +2578,7 @@ void OCPlanner::loadTestRulesFromCodes()
     vector<ParamValue> closedStateOwnerList2;
     closedStateOwnerList2.push_back(var_avatar);
     closedStateOwnerList2.push_back(var_obj);
-    State* closedState2 = new State("Distance",ActionParamType::BOOLEAN(),STATE_EQUAL_TO , float_dis , closedStateOwnerList2, true, &Inquery::inqueryDistance);
+    State* closedState2 = new State("Distance",ActionParamType::FLOAT(),STATE_EQUAL_TO , float_dis , closedStateOwnerList2, true, &Inquery::inqueryDistance);
     Effect* getClosedEffect = new Effect(closedState2, OP_ASSIGN_LESS_THAN, CLOSED_DISTANCE);
 
     // effect2: position changed
@@ -2225,6 +2600,8 @@ void OCPlanner::loadTestRulesFromCodes()
     //----------------------------End Rule: Move_to an object to get closed to it-------------------------------------------
 
     //----------------------------Begin Rule: walk to a position to get closed to it  and stand on it-----------------------------------------
+    // define variables:
+    ParamValue var_pos = vector_var[0];
 
     // precondition 1:There exists a path from the agent to object
     vector<ParamValue> existPathStateOwnerList2;
@@ -2411,7 +2788,7 @@ void OCPlanner::loadTestRulesFromCodes()
      existPathStateOwnerList3.push_back(var_pos_from);
      existPathStateOwnerList3.push_back(var_pos_to);
      State* existPathState3 = new State("existPath",ActionParamType::BOOLEAN(),STATE_EQUAL_TO ,var_exist_path, existPathStateOwnerList3, true, &Inquery::inqueryExistPath);
-    Effect* becomeExistPathEffect = new Effect(existPathState3, OP_ASSIGN, "true");
+    Effect* becomeExistPathEffect = new Effect(existPathState3, OP_ASSIGN, "true",false);
 
     // add rule:
     Rule* accessAdjacentRule = new Rule(doNothingAction,boost::get<Entity>(varAvatar),0.0f);
@@ -2452,7 +2829,7 @@ void OCPlanner::loadTestRulesFromCodes()
     existPathStateOwnerList6.push_back(var_pos_1);
     existPathStateOwnerList6.push_back(var_pos_3);
     State* existPathState6 = new State("existPath",ActionParamType::BOOLEAN(),STATE_EQUAL_TO ,var_exist_path, existPathStateOwnerList6, true, &Inquery::inqueryExistPath);
-    Effect* becomeExistPathEffect2 = new Effect(existPathState6, OP_ASSIGN, "true");
+    Effect* becomeExistPathEffect2 = new Effect(existPathState6, OP_ASSIGN, "true", false);
 
     // add rule:
     Rule* pathTransmitRule = new Rule(doNothingAction,boost::get<Entity>(varAvatar),0.0f);
@@ -2469,7 +2846,6 @@ void OCPlanner::loadTestRulesFromCodes()
     this->AllRules.push_back(pathTransmitRule);
 
     //----------------------------End Rule: if there exist a path from pos1 to pos2, and also exist a path from pos2 to pos3, then there should exist a path from pos1 to pos3---
-
 
 }
 

@@ -2,19 +2,20 @@
 #define _OPENCOG_ATOMSPACE_ASYNC_H
 
 #include <iostream>
-#include <boost/scoped_ptr.hpp>
 #include <boost/thread.hpp>
 
 #include <opencog/util/concurrent_queue.h>
 
-#include "AtomSpaceImpl.h"
-#include "ASRequest.h"
-#include "Handle.h"
-#include "types.h"
+#include <opencog/atomspace/AtomSpaceImpl.h>
+#include <opencog/atomspace/ASRequest.h>
+#include <opencog/atomspace/Handle.h>
 
 class AtomSpaceAsyncUTest;
 
 namespace opencog {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
 
 class AtomSpace;
 class SavingLoading;
@@ -38,18 +39,17 @@ class AtomSpaceAsync {
     void startEventLoop();
     void stopEventLoop();
 
-    concurrent_queue< boost::shared_ptr<ASRequest> > requestQueue;
+    typedef std::shared_ptr<ASRequest> ASRequestPtr;
+    concurrent_queue<ASRequestPtr> requestQueue;
 
     void eventLoop();
-
-    const AtomTable& getAtomTable() { return atomspace.getAtomTable(); };
 
 public: 
 
     AtomSpaceAsync();
     ~AtomSpaceAsync();
 
-    // TODO: should be protected by mutex 
+    /** @todo should be protected by mutex */
     int get_counter() { return counter; }
 
     bool isQueueEmpty() { return requestQueue.empty(); } ;
@@ -66,24 +66,14 @@ public:
     // hypergraph.
 
     HandleRequest addNode(Type t, const std::string& str = "",
-            const TruthValue& tvn = TruthValue::DEFAULT_TV() ) {
-        // We need to clone the TV as the caller's TV may go out of scope
-        // before the request is processed.
-        TruthValue* tv = tvn.clone();
+            TruthValuePtr tv = TruthValue::DEFAULT_TV() ) {
         HandleRequest hr(new AddNodeASR(&atomspace,t,str,tv));
         requestQueue.push(hr);
         return hr;
     }
 
     HandleRequest addLink(Type t, const HandleSeq& outgoing,
-            const TruthValue& tvn = TruthValue::DEFAULT_TV() ) {
-        // We need to clone the TV as the caller's TV may go out of scope
-        // before the request is processed.
-        const TruthValue* tv;
-        if (!tvn.isNullTv()) tv = tvn.clone();
-        // Unless it is a NULL_TV as this can't be cloned
-        else tv = &TruthValue::NULL_TV();
-
+            TruthValuePtr tv = TruthValue::DEFAULT_TV() ) {
         HandleRequest hr(new AddLinkASR(&atomspace,t,outgoing,tv));
         requestQueue.push(hr);
         return hr;
@@ -111,18 +101,6 @@ public:
         HandleRequest hr(new GetLinkHandleASR(&atomspace,t,outgoing));
         requestQueue.push(hr);
         return hr;
-    }
-
-    AtomRequest getAtom(const Handle& h) {
-        AtomRequest r(new GetAtomASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    BoolRequest commitAtom(const Atom& a) {
-        BoolRequest r(new CommitAtomASR(&atomspace,a));
-        requestQueue.push(r);
-        return r;
     }
 
     /**
@@ -236,54 +214,6 @@ public:
         return r;
     }
 
-    /** Get the atom referred to by Handle h represented as a string. */
-    StringRequest atomAsString(Handle h, bool terse = true) {
-        StringRequest r(new AtomAsStringASR(&atomspace,h,terse));
-        requestQueue.push(r);
-        return r;
-    }
-
-    BoolRequest isValidHandle(Handle h) {
-        BoolRequest r(new ValidateHandleASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    /** Retrieve the name of a given Handle */
-    StringRequest getName(Handle h) {
-        StringRequest r(new GetNameASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    /** Retrieve the type of a given Handle */
-    TypeRequest getType(Handle h) {
-        TypeRequest r(new GetTypeASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    /** Retrieve the outgoing set of a given link */
-    HandleSeqRequest getOutgoing(Handle h) {
-        HandleSeqRequest hr(new GetOutgoingASR(&atomspace,h));
-        requestQueue.push(hr);
-        return hr;
-    }
-
-    /** Retrieve a single Handle from the outgoing set of a given link */
-    HandleRequest getOutgoing(Handle h, int idx) {
-        HandleRequest hr(new GetOutgoingIndexASR(&atomspace,h,idx));
-        requestQueue.push(hr);
-        return hr;
-    }
-
-    /** Retrieve the arity of a given link */
-    IntRequest getArity(Handle h) {
-        IntRequest r(new GetArityASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
     /** Retrieve the incoming set of a given atom */
     HandleSeqRequest getIncoming(Handle h) {
         HandleSeqRequest hr(new GetIncomingASR(&atomspace,h));
@@ -298,13 +228,7 @@ public:
         return r;
     }
 
-    AttentionValueRequest getAV(Handle h) {
-        AttentionValueRequest r(new GetAttentionValueASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    VoidRequest setAV(Handle h,const AttentionValue& av) {
+    VoidRequest setAV(Handle h, AttentionValuePtr av) {
         VoidRequest r(new SetAttentionValueASR(&atomspace,h,av));
         requestQueue.push(r);
         return r;
@@ -332,7 +256,7 @@ public:
     }
 
     /** Change the TruthValue summary of a given Handle */
-    VoidRequest setTV(Handle h, const TruthValue& tv, VersionHandle vh = NULL_VERSION_HANDLE) {
+    VoidRequest setTV(Handle h, TruthValuePtr tv, VersionHandle vh = NULL_VERSION_HANDLE) {
         VoidRequest r(new SetTruthValueASR(&atomspace,h,tv,vh));
         requestQueue.push(r);
         return r;
@@ -348,13 +272,6 @@ public:
     /** Change the Short-Term Importance of an Atom */
     VoidRequest setSTI(Handle h, AttentionValue::sti_t sti) {
         VoidRequest r(new SetAttentionValueSTIASR(&atomspace,h,sti));
-        requestQueue.push(r);
-        return r;
-    }
-
-    /** Retrieve the Short-Term Importance of a given Handle */
-    STIRequest getSTI(Handle h) {
-        STIRequest r(new GetAttentionValueSTIASR(&atomspace,h));
         requestQueue.push(r);
         return r;
     }
@@ -386,13 +303,6 @@ public:
         return r;
     }
 
-    /** Retrieve the Long-Term Importance of a given Handle */
-    LTIRequest getLTI(Handle h) {
-        LTIRequest r(new GetAttentionValueLTIASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
     /** Increase the Very Long-Term Importance of an Atom by 1*/
     VoidRequest incVLTI(Handle h) {
         VoidRequest r(new IncAttentionValueVLTIASR(&atomspace,h));
@@ -403,13 +313,6 @@ public:
     /** Decrease the Very Long-Term Importance of an Atom by 1*/
     VoidRequest decVLTI(Handle h) {
         VoidRequest r(new DecAttentionValueVLTIASR(&atomspace,h));
-        requestQueue.push(r);
-        return r;
-    }
-
-    /** Retrieve the Very Long-Term Importance of a given Handle */
-    VLTIRequest getVLTI(Handle h) {
-        VLTIRequest r(new GetAttentionValueVLTIASR(&atomspace,h));
         requestQueue.push(r);
         return r;
     }
@@ -701,23 +604,28 @@ public:
         return r;
     }
 
-    // wrap these in a mutex
+    // TODO XXX FIXME convert to boost::signals2 ASAP for thread safety.
     boost::signals::connection addAtomSignal(const AtomSignal::slot_type& function) {
         return atomspace.addAtomSignal().connect(function);
     }
-    boost::signals::connection removeAtomSignal(const AtomSignal::slot_type& function) {
+    boost::signals::connection removeAtomSignal(const AtomPtrSignal::slot_type& function) {
         return atomspace.removeAtomSignal().connect(function);
     }
-    boost::signals::connection mergeAtomSignal(const AtomSignal::slot_type& function) {
-        return atomspace.mergeAtomSignal().connect(function);
+    boost::signals::connection AVChangedSignal(const AVCHSigl::slot_type& function) {
+        return atomspace.AVChangedSignal().connect(function);
+    }
+    boost::signals::connection TVChangedSignal(const TVCHSigl::slot_type& function) {
+        return atomspace.TVChangedSignal().connect(function);
     }
 
     //--------------
     inline AttentionBank& getAttentionBank()
     { return atomspace.getAttentionBank(); }
 
+    const AtomTable& getAtomTable() { return atomspace.getAtomTable(); };
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_ATOMSPACE_ASYNC_H

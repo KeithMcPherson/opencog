@@ -36,7 +36,6 @@
 #include <opencog/atomspace/Link.h>
 #include <opencog/atomspace/Node.h>
 #include <opencog/atomspace/SimpleTruthValue.h>
-#include <opencog/atomspace/StatisticsMonitor.h>
 #include <opencog/atomspace/types.h>
 #include <opencog/util/Logger.h>
 #include <opencog/util/oc_assert.h>
@@ -55,14 +54,14 @@ using namespace opencog;
 // ====================================================================
 
 AtomSpaceImpl::AtomSpaceImpl(void)
+    : bank(&atomTable)
 {
     backing_store = NULL;
 
     // connect signals
-    addedAtomConnection = addAtomSignal().connect(boost::bind(&AtomSpaceImpl::atomAdded, this, _1, _2));
-    removedAtomConnection = removeAtomSignal().connect(boost::bind(&AtomSpaceImpl::atomRemoved, this, _1, _2));
+    addedAtomConnection = addAtomSignal().connect(boost::bind(&AtomSpaceImpl::atomAdded, this, _1));
+    removedAtomConnection = atomTable.removeAtomSignal().connect(boost::bind(&AtomSpaceImpl::atomRemoved, this, _1));
 
-    pthread_mutex_init(&atomSpaceLock, NULL);
     DPRINTF("AtomSpaceImpl::Constructor AtomTable address: %p\n", &atomTable);
 }
 
@@ -87,9 +86,9 @@ void AtomSpaceImpl::unregisterBackingStore(BackingStore *bs)
 
 // ====================================================================
 
-void AtomSpaceImpl::atomAdded(AtomSpaceImpl *a, Handle h)
+void AtomSpaceImpl::atomAdded(Handle h)
 {
-    DPRINTF("AtomSpaceImpl::atomAdded(%lu): %s\n", h.value(), atomAsString(h).c_str());
+    DPRINTF("AtomSpaceImpl::atomAdded(%lu): %s\n", h.value(), h->toShortString().c_str());
     Type type = getType(h);
     if (type == CONTEXT_LINK) {
         // Add corresponding VersionedTV to the contextualized atom
@@ -104,26 +103,28 @@ void AtomSpaceImpl::atomAdded(AtomSpaceImpl *a, Handle h)
     }
 }
 
-void AtomSpaceImpl::atomRemoved(AtomSpaceImpl *a, Handle h)
+void AtomSpaceImpl::atomRemoved(AtomPtr atom)
 {
-    Type type = getType(h);
+    Type type = atom->getType();
     if (type == CONTEXT_LINK) {
         // Remove corresponding VersionedTV to the contextualized atom
         // Note that when a VersionedTV is removed from a
         // CompositeTruthValue it will not automatically remove the
         // corresponding ContextLink
-        OC_ASSERT(getArity(h) == 2, "AtomSpaceImpl::atomRemoved: Got invalid arity for removed ContextLink = %d\n", getArity(h));
-        Handle cx = getOutgoing(h, 0); // context
-        Handle ca = getOutgoing(h, 1); // contextualized atom
-        const TruthValue& tv = getTV(ca);
-        OC_ASSERT(tv.getType() == COMPOSITE_TRUTH_VALUE);
-        CompositeTruthValue new_ctv(static_cast<const CompositeTruthValue&>(tv));
-        new_ctv.removeVersionedTV(VersionHandle(CONTEXTUAL, cx));
+        LinkPtr lll(LinkCast(atom));
+        OC_ASSERT(lll->getArity() == 2,
+            "AtomSpaceImpl::atomRemoved: Got invalid arity for removed ContextLink = %d\n",
+            lll->getArity());
+        Handle cx = lll->getOutgoingAtom(0); // context
+        Handle ca = lll->getOutgoingAtom(1); // contextualized atom
+        TruthValuePtr tv = getTV(ca);
+        CompositeTruthValuePtr new_ctv(CompositeTruthValue::createCTV(tv));
+        new_ctv->removeVersionedTV(VersionHandle(CONTEXTUAL, cx));
         // @todo: one may want improve that code by converting back
         // the CompositeTV into a simple or indefinite TV when it has
         // no more VersionedTV
         setTV(ca, new_ctv);
-    } 
+    }
 }
 
 // ====================================================================
@@ -135,106 +136,59 @@ void AtomSpaceImpl::print(std::ostream& output, Type type, bool subclass) const
 
 AtomSpaceImpl& AtomSpaceImpl::operator=(const AtomSpaceImpl& other)
 {
-    throw opencog::RuntimeException(TRACE_INFO, 
+    throw opencog::RuntimeException(TRACE_INFO,
             "AtomSpaceImpl - Cannot copy an object of this class");
 }
 
 AtomSpaceImpl::AtomSpaceImpl(const AtomSpaceImpl& other)
+    : bank(&atomTable)
 {
-    throw opencog::RuntimeException(TRACE_INFO, 
+    throw opencog::RuntimeException(TRACE_INFO,
             "AtomSpaceImpl - Cannot copy an object of this class");
 }
 
-bool AtomSpaceImpl::removeAtom(Handle h, bool recursive)
-{
-    UnorderedHandleSet extractedHandles = atomTable.extract(h, recursive);
-    if (extractedHandles.size() == 0) return false;
-
-    UnorderedHandleSet::const_iterator it;
-    for (it = extractedHandles.begin(); it != extractedHandles.end(); it++) {
-        Handle h = *it;
-
-        // Also refund sti/lti to AtomSpace funds pool
-        bank.updateSTIFunds(getSTI(h));
-        bank.updateLTIFunds(getLTI(h));
-
-        // emit remove atom signal
-        _removeAtomSignal(this, h);
-    }
-    atomTable.removeExtractedHandles(extractedHandles);
-        
-    return true;
-}
-
-Handle AtomSpaceImpl::addNode(Type t, const string& name, const TruthValue& tvn)
+Handle AtomSpaceImpl::addNode(Type t, const string& name, TruthValuePtr tvn)
 {
     DPRINTF("AtomSpaceImpl::addNode AtomTable address: %p\n", &atomTable);
     DPRINTF("====AtomTable.linkIndex address: %p size: %d\n", &atomTable.linkIndex, atomTable.linkIndex.idx.size());
-    Handle result = getHandle(t, name);
-    if (atomTable.holds(result)) {
-        atomTable.merge(result, tvn); 
-        // emit "merge atom" signal
-        _mergeAtomSignal(this,result);
-        return result;
-    }
-
-    // Remove default STI/LTI from AtomSpace Funds
-    fundsSTI -= AttentionValue::DEFAULTATOMSTI;
-    fundsLTI -= AttentionValue::DEFAULTATOMLTI;
 
     // Maybe the backing store knows about this atom.
+// XXX this is utterly the wrong place to do this ... 
     if (backing_store) {
-        Node *n = backing_store->getNode(t, name.c_str());
+        NodePtr n(backing_store->getNode(t, name.c_str()));
         if (n) {
-            result = atomTable.add(n);
+            Handle result = atomTable.add(n);
             atomTable.merge(result,tvn);
-            // emit "merge atom" signal
-            _mergeAtomSignal(this,result);
             return result;
         }
     }
 
-    Handle newNodeHandle = atomTable.add(new Node(t, name, tvn));
-    // emit add atom signal
-    _addAtomSignal(this,newNodeHandle);
+    NodePtr n(createNode(t, name, tvn));
+    Handle newNodeHandle = atomTable.add(n);
     return newNodeHandle;
 }
 
 Handle AtomSpaceImpl::addLink(Type t, const HandleSeq& outgoing,
-                          const TruthValue& tvn)
+                              TruthValuePtr tvn)
 {
     DPRINTF("AtomSpaceImpl::addLink AtomTable address: %p\n", &atomTable);
     DPRINTF("====AtomTable.linkIndex address: %p size: %d\n", &atomTable.linkIndex, atomTable.linkIndex.idx.size());
-    Handle result = getHandle(t, outgoing);
-    if (atomTable.holds(result)) {
-        // If the node already exists, it must be merged properly 
-        atomTable.merge(result, tvn); 
-        _mergeAtomSignal(this,result);
-        return result;
-    }
 
-    // Remove default STI/LTI from AtomSpace Funds
-    fundsSTI -= AttentionValue::DEFAULTATOMSTI;
-    fundsLTI -= AttentionValue::DEFAULTATOMLTI;
-
+// XXX this is utterly the wrong place to do this ... 
     // Maybe the backing store knows about this atom.
     if (backing_store)
     {
-        Link *l = backing_store->getLink(t, outgoing);
+        LinkPtr l(backing_store->getLink(t, outgoing));
         if (l) {
             // register the atom with the atomtable (so it gets placed in
             // indices)
-            result = atomTable.add(l);
+            Handle result = atomTable.add(l);
             atomTable.merge(result,tvn);
-            // Send a merge signal
-            _mergeAtomSignal(this,result);
             return result;
         }
     }
 
-    Handle newLinkHandle = atomTable.add(new Link(t, outgoing, tvn));
-    // emit add atom signal
-    _addAtomSignal(this,newLinkHandle);
+    Handle newLinkHandle = atomTable.add(createLink(t, outgoing, tvn));
     return newLinkHandle;
 }
 
@@ -248,13 +202,13 @@ Handle AtomSpaceImpl::fetchAtom(Handle h)
     // Maybe the backing store knows about this atom.
     if (backing_store)
     {
-        Atom *a = backing_store->getAtom(h);
+        AtomPtr a(backing_store->getAtom(h));
 
         // For links, must perform a recursive fetch, as otherwise
         // the atomtable.add below will throw an error.
-        Link *l = dynamic_cast<Link *>(a);
+        LinkPtr l(LinkCast(a));
         if (l) {
-           const std::vector<Handle>& ogs = l->getOutgoingSet();
+           const HandleSeq& ogs = l->getOutgoingSet();
            size_t arity = ogs.size();
            for (size_t i=0; i<arity; i++)
            {
@@ -265,7 +219,7 @@ Handle AtomSpaceImpl::fetchAtom(Handle h)
         }
         if (a) return atomTable.add(a);
     }
-    
+
     return Handle::UNDEFINED;
 }
 
@@ -276,7 +230,7 @@ Handle AtomSpaceImpl::fetchIncomingSet(Handle h, bool recursive)
 
     // Get everything from the backing store.
     if (backing_store) {
-        std::vector<Handle> iset = backing_store->getIncomingSet(h);
+        HandleSeq iset = backing_store->getIncomingSet(h);
         size_t isz = iset.size();
         for (size_t i=0; i<isz; i++) {
             Handle hi = iset[i];
@@ -290,75 +244,10 @@ Handle AtomSpaceImpl::fetchIncomingSet(Handle h, bool recursive)
     return base;
 }
 
-Handle AtomSpaceImpl::addRealAtom(const Atom& atom, const TruthValue& tvn)
-{
-    DPRINTF("AtomSpaceImpl::addRealAtom\n");
-    const TruthValue& newTV = (tvn.isNullTv()) ? atom.getTruthValue() : tvn;
-    // Check if the given Atom reference is of an atom
-    // that was not inserted yet.  If so, adds the atom. Otherwise, just sets
-    // result to the correct/valid handle.
-    Handle result;
-    const Node *node = dynamic_cast<const Node *>(&atom);
-    if (node) {
-        result = getHandle(node->getType(), node->getName());
-        if (result == Handle::UNDEFINED) {
-            return addNode(node->getType(), node->getName(), newTV);
-        }
-    } else {
-        const Link *link = dynamic_cast<const Link *>(&atom);
-        result = getHandle(link->getType(), link->getOutgoingSet());
-        if (result == Handle::UNDEFINED) {
-            return addLink(link->getType(), link->getOutgoingSet(), newTV);
-        }
-    }
-    const TruthValue& currentTV = getTV(result);
-    if (currentTV.isNullTv()) {
-        setTV(result, newTV);
-    } else {
-        TruthValue* mergedTV = currentTV.merge(newTV);
-        setTV(result, *mergedTV);
-        delete mergedTV;
-    }
-
-    // XXX Should also merge Attention values and trails, right?
-    return result;
-}
-
-boost::shared_ptr<Atom> AtomSpaceImpl::cloneAtom(const Handle& h) const
-{
-    // TODO: Add timestamp to atoms and add vector clock to AtomSpace
-    // Need to use the newly added clone methods as the copy constructors for
-    // Node and Link don't copy incoming set.
-    Atom * a = atomTable.getAtom(h);
-    boost::shared_ptr<Atom> dud;
-    if (!a) return dud;
-    const Node *node = dynamic_cast<const Node *>(a);
-    if (!node) {
-        const Link *l = dynamic_cast<const Link *>(a);
-        if (!l) return dud;
-        boost::shared_ptr<Atom> clone_link(l->clone());
-        return clone_link;
-    } else {
-        boost::shared_ptr<Atom> clone_node(node->clone());
-        return clone_node;
-    }
-}
-
-std::string AtomSpaceImpl::atomAsString(Handle h, bool terse) const
-{
-    Atom* a = atomTable.getAtom(h);
-    if (a) {
-        if (terse) return a->toShortString();
-        else return a->toString();
-    }
-    return std::string("ERROR: Bad handle");
-}
-
 HandleSeq AtomSpaceImpl::getNeighbors(Handle h, bool fanin,
-        bool fanout, Type desiredLinkType, bool subClasses) const 
+        bool fanout, Type desiredLinkType, bool subClasses) const
 {
-    Atom* a = atomTable.getAtom(h);
-    if (a == NULL) {
+    if (h == NULL) {
         throw InvalidParamException(TRACE_INFO,
             "Handle %d doesn't refer to a Atom", h.value());
     }
@@ -368,12 +257,12 @@ HandleSeq AtomSpaceImpl::getNeighbors(Handle h, bool fanin,
     for (UnorderedHandleSet::const_iterator it = iset.begin();
          it != iset.end(); it++)
     {
-        Link *link = atomTable.getLink(*it);
+        LinkPtr link(LinkCast(*it));
         Type linkType = link->getType();
         DPRINTF("Atom::getNeighbors(): linkType = %d desiredLinkType = %d\n", linkType, desiredLinkType);
         if ((linkType == desiredLinkType) || (subClasses && classserver().isA(linkType, desiredLinkType))) {
-            int linkArity = link->getArity();
-            for (int i = 0; i < linkArity; i++) {
+            Arity linkArity = link->getArity();
+            for (Arity i = 0; i < linkArity; i++) {
                 Handle handle = link->getOutgoingSet()[i];
                 if (handle == h) continue;
                 if (!fanout && link->isSource(h)) continue;
@@ -385,32 +274,14 @@ HandleSeq AtomSpaceImpl::getNeighbors(Handle h, bool fanin,
     return answer;
 }
 
-bool AtomSpaceImpl::commitAtom(const Atom& a)
-{
-    // TODO: Check for differences and abort if timestamp is out of date
-
-    Handle h = atomTable.getHandle(&a);
-    Atom* original = atomTable.getAtom(h);
-    if (original == NULL)
-        // TODO: allow committing a new atom?
-        return false;
-    // The only mutable properties of atoms are the TV and AttentionValue
-    // TODO: this isn't correct, trails, flags and other things might change
-    // too... XXX the AtomTable already has a merge function; shouldn't we
-    // be using that?
-    original->setTruthValue(a.getTruthValue());
-    original->setAttentionValue(a.getAttentionValue());
-    return true;
-}
-
 HandleSeq AtomSpaceImpl::getIncoming(Handle h)
 {
-    // It is possible that the incoming set that we currently 
+    // It is possible that the incoming set that we currently
     // hold is much smaller than what is in storage. In this case,
     // we would like to automatically pull all of those other atoms
     // into here (using fetchIncomingSet(h,true) to do so). However,
-    // maybe the incoming set is up-to-date, in which case polling 
-    // storage over and over is a huge waste of time.  What to do? 
+    // maybe the incoming set is up-to-date, in which case polling
+    // storage over and over is a huge waste of time.  What to do?
     //
     // h = fetchIncomingSet(h, true);
     //
@@ -422,85 +293,96 @@ HandleSeq AtomSpaceImpl::getIncoming(Handle h)
     return hs;
 }
 
-bool AtomSpaceImpl::setTV(Handle h, const TruthValue& tv, VersionHandle vh)
+bool AtomSpaceImpl::setTV(Handle h, TruthValuePtr tv, VersionHandle vh)
 {
-    Atom *a = atomTable.getAtom(h);
-    if (!a) return false;
-    const TruthValue& currentTv = a->getTruthValue();
+    // Due to the way AsyncRequest is designed, we are being called
+    // with a null atom pointer; only the uuid is valid. So first,
+    // go fetch the actual atom out of the table.
+    h = atomTable.getHandle(h);
+
+    if (!h) return false;
+    TruthValuePtr currentTv = h->getTruthValue();
     if (!isNullVersionHandle(vh))
     {
-        CompositeTruthValue ctv = (currentTv.getType() == COMPOSITE_TRUTH_VALUE) ?
-                                  CompositeTruthValue((const CompositeTruthValue&) currentTv) :
-                                  CompositeTruthValue(currentTv, NULL_VERSION_HANDLE);
-        ctv.setVersionedTV(tv, vh);
-        a->setTruthValue(ctv); // always call setTruthValue to update indices
+        CompositeTruthValuePtr ctv = (currentTv->getType() == COMPOSITE_TRUTH_VALUE) ?
+                            CompositeTruthValue::createCTV(currentTv) :
+                            CompositeTruthValue::createCTV(currentTv, NULL_VERSION_HANDLE);
+        ctv->setVersionedTV(tv, vh);
+        h->setTruthValue(ctv); // always call setTruthValue to update indices
     } else {
-        if (currentTv.getType() == COMPOSITE_TRUTH_VALUE &&
-                tv.getType() != COMPOSITE_TRUTH_VALUE) {
-            CompositeTruthValue ctv((const CompositeTruthValue&) currentTv);
-            ctv.setVersionedTV(tv, vh);
-            a->setTruthValue(ctv);
+        if (currentTv->getType() == COMPOSITE_TRUTH_VALUE &&
+                tv->getType() != COMPOSITE_TRUTH_VALUE)
+        {
+            CompositeTruthValuePtr ctv(CompositeTruthValue::createCTV(currentTv));
+            ctv->setVersionedTV(tv, vh);
+            h->setTruthValue(ctv);
         } else {
-            a->setTruthValue(tv);
+            h->setTruthValue(tv);
         }
     }
 
     return true;
 }
 
-const TruthValue& AtomSpaceImpl::getTV(Handle h, VersionHandle vh) const
+TruthValuePtr AtomSpaceImpl::getTV(Handle h, VersionHandle vh) const
 {
-    Atom* a = atomTable.getAtom(h);
-    if (!a) return TruthValue::NULL_TV();
+    // Due to the way AsyncRequest is designed, we are being called
+    // with a null atom pointer; only the uuid is valid. So first,
+    // go fetch the actual atom out of the table.
+    h = atomTable.getHandle(h);
+    if (!h) return TruthValue::NULL_TV();
 
-    const TruthValue& tv = a->getTruthValue();
+    TruthValuePtr tv = h->getTruthValue();
     if (isNullVersionHandle(vh)) {
         return tv;
     }
-    else if (tv.getType() == COMPOSITE_TRUTH_VALUE)
+    else if (tv->getType() == COMPOSITE_TRUTH_VALUE)
     {
-        return ((const CompositeTruthValue&) tv).getVersionedTV(vh);
+        return std::dynamic_pointer_cast<CompositeTruthValue>(tv)->getVersionedTV(vh);
     }
     return TruthValue::NULL_TV();
 }
 
 void AtomSpaceImpl::setMean(Handle h, float mean) throw (InvalidParamException)
 {
-    TruthValue* newTv = getTV(h).clone();
+    TruthValuePtr newTv = getTV(h);
     if (newTv->getType() == COMPOSITE_TRUTH_VALUE) {
         // Since CompositeTV has no setMean() method, we must handle it differently
-        CompositeTruthValue* ctv = (CompositeTruthValue*) newTv;
-        TruthValue* primaryTv = ctv->getPrimaryTV().clone();
+        CompositeTruthValuePtr ctv(CompositeTruthValue::createCTV(newTv));
+
+        TruthValuePtr primaryTv = ctv->getPrimaryTV();
         if (primaryTv->getType() == SIMPLE_TRUTH_VALUE) {
-            ((SimpleTruthValue*)primaryTv)->setMean(mean);
+            primaryTv = SimpleTruthValue::createTV(mean, primaryTv->getCount());
         } else if (primaryTv->getType() == INDEFINITE_TRUTH_VALUE) {
-            ((IndefiniteTruthValue*)primaryTv)->setMean(mean);
+            IndefiniteTruthValuePtr itv = IndefiniteTruthValue::createITV(primaryTv);
+            itv->setMean(mean);
+            primaryTv = itv;
         } else {
             throw InvalidParamException(TRACE_INFO,
-                                        "AtomSpaceImpl - Got a primaryTV with an invalid or unknown type");
+               "AtomSpaceImpl - Got a primaryTV with an invalid or unknown type");
         }
-        ctv->setVersionedTV(*primaryTv, NULL_VERSION_HANDLE);
-        delete primaryTv;
+        ctv->setVersionedTV(primaryTv, NULL_VERSION_HANDLE);
     } else {
         if (newTv->getType() == SIMPLE_TRUTH_VALUE) {
-            ((SimpleTruthValue*)newTv)->setMean(mean);
+            newTv = SimpleTruthValue::createTV(mean, newTv->getCount());
         } else if (newTv->getType() == INDEFINITE_TRUTH_VALUE) {
-            ((IndefiniteTruthValue*)newTv)->setMean(mean);
+            IndefiniteTruthValuePtr itv = IndefiniteTruthValue::createITV(newTv);
+            itv->setMean(mean);
+            newTv = itv;
         } else {
             throw InvalidParamException(TRACE_INFO,
-                                        "AtomSpaceImpl - Got a TV with an invalid or unknown type");
+               "AtomSpaceImpl - Got a TV with an invalid or unknown type");
         }
     }
-    setTV(h, *newTv);
-    delete newTv;
+    setTV(h, newTv);
 }
 
-float AtomSpaceImpl::getNormalisedSTI(AttentionValueHolder *avh, bool average, bool clip) const
+float AtomSpaceImpl::getNormalisedSTI(AttentionValuePtr av, bool average, bool clip) const
 {
     // get normalizer (maxSTI - attention boundary)
     int normaliser;
     float val;
-    AttentionValue::sti_t s = bank.getSTI(avh);
+    AttentionValue::sti_t s = av->getSTI();
     if (s > bank.getAttentionalFocusBoundary()) {
         normaliser = (int) bank.getMaxSTI(average) - bank.getAttentionalFocusBoundary();
         if (normaliser == 0) {
@@ -521,11 +403,11 @@ float AtomSpaceImpl::getNormalisedSTI(AttentionValueHolder *avh, bool average, b
     }
 }
 
-float AtomSpaceImpl::getNormalisedZeroToOneSTI(AttentionValueHolder *avh, bool average, bool clip) const
+float AtomSpaceImpl::getNormalisedZeroToOneSTI(AttentionValuePtr av, bool average, bool clip) const
 {
     int normaliser;
     float val;
-    AttentionValue::sti_t s = bank.getSTI(avh);
+    AttentionValue::sti_t s = av->getSTI();
     normaliser = bank.getMaxSTI(average) - bank.getMinSTI(average);
     if (normaliser == 0) {
         return 0.0f;
@@ -542,12 +424,6 @@ size_t AtomSpaceImpl::Nodes(VersionHandle vh) const
 {
     DPRINTF("AtomSpaceImpl::Nodes Atom space address: %p\n", this);
 
-    /* This is too expensive and depending on an Agent that may be disabled.
-     * Besides it does not have statistics by VersionHandles
-     DynamicsStatisticsAgent *agent=DynamicsStatisticsAgent::getInstance();
-     agent->reevaluateAllStatistics();
-     return agent->getNodeCount();
-     */
     // The following implementation is still expensive, but already deals with VersionHandles:
     // It would be cheaper if instead we just used foreachHandleByTypeVH
     // and just had a function that simply counts!!
@@ -556,22 +432,6 @@ size_t AtomSpaceImpl::Nodes(VersionHandle vh) const
     return hs.size();
 }
 
-void AtomSpaceImpl::decayShortTermImportance()
-{
-    DPRINTF("AtomSpaceImpl::decayShortTermImportance Atom space address: %p\n", this);
-    UnorderedHandleSet oldAtoms = atomTable.decayShortTermImportance();
-
-    // Remove from indexes
-    atomTable.clearIndexesAndRemoveAtoms(oldAtoms);
-
-    // Send signals  -- emit remove atom signal
-    UnorderedHandleSet::const_iterator it;
-    for (it = oldAtoms.begin(); it != oldAtoms.end(); it++)
-        _removeAtomSignal(this, *it);
-
-    // actually remove atoms from AtomTable
-    atomTable.removeExtractedHandles(oldAtoms);
-}
 
 size_t AtomSpaceImpl::Links(VersionHandle vh) const
 {

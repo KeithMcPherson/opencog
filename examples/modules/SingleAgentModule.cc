@@ -36,36 +36,39 @@ extern "C" const char* opencog_module_id()
     return SingleAgentModule::info().id.c_str();
 }
 
-extern "C" Module* opencog_module_load()
+extern "C" Module* opencog_module_load(CogServer& cogserver)
 {
-    CogServer& cogserver = static_cast<CogServer&>(server());
     cogserver.registerAgent(SingleAgentModule::info().id, &(SingleAgentModule::factory()));
-    SingleAgentModule* agent =
-        static_cast<SingleAgentModule*>(cogserver.createAgent(SingleAgentModule::info().id, true));
+    SingleAgentModulePtr agent = cogserver.createAgent<SingleAgentModule>(true);
     agent->name = "OriginalSingleAgentModule";
-    return agent;
+    return agent.get();
 }
 
 extern "C" void opencog_module_unload(Module* m)
 {
     SingleAgentModule* agent = static_cast<SingleAgentModule*>(m);
-    CogServer& cogserver = static_cast<CogServer&>(server());
-    cogserver.stopAgent(agent);
-    delete m;
+    agent->stopAgent();
 }
 
-SingleAgentModule::SingleAgentModule() : Agent(100), Module()
+SingleAgentModule::SingleAgentModule(CogServer& cs) : Agent(cs, 100), Module(cs)
 {
     logger().info("[SingleAgentModule] constructor (%s)", name.c_str());
 }
 
-SingleAgentModule::~SingleAgentModule() {
+SingleAgentModule::~SingleAgentModule()
+{
     logger().info("[SingleAgentModule] destructor (%s)", name.c_str());
-    CogServer& cogserver = static_cast<CogServer&>(server());
-    cogserver.destroyAllAgents(SingleAgentModule::info().id);
+    Module::_cogserver.destroyAllAgents(SingleAgentModule::info().id);
 }
 
-void SingleAgentModule::run(CogServer* server)
+void SingleAgentModule::stopAgent()
+{
+    Module::_cogserver.stopAgent(a);
+    Module::_cogserver.stopAgent(b);
+    Module::_cogserver.stopAgent(c);
+}
+
+void SingleAgentModule::run()
 {
     logger().info("[SingleAgentModule] run (%s)", name.c_str());
 }
@@ -73,15 +76,15 @@ void SingleAgentModule::run(CogServer* server)
 void SingleAgentModule::init()
 {
     logger().info("[TestModule] init (%s)", name.c_str());
-    CogServer& cogserver = static_cast<CogServer&>(server());
 
-    SingleAgentModule* a =
-        static_cast<SingleAgentModule*>(cogserver.createAgent(info().id, true));
+    // Use static global vars -- the egent is destroyed when these go 
+    // out of scope (during the C++ finalizer).
+    a = Module::_cogserver.createAgent<SingleAgentModule>(true);
     a->name = "SingleAgentModule1";
 
-    a = static_cast<SingleAgentModule*>(cogserver.createAgent(info().id, true));
-    a->name = "SingleAgentModule2";
+    b = Module::_cogserver.createAgent<SingleAgentModule>(true);
+    b->name = "SingleAgentModule2";
 
-    a = static_cast<SingleAgentModule*>(cogserver.createAgent(info().id, true));
-    a->name = "SingleAgentModule3";
+    c = Module::_cogserver.createAgent<SingleAgentModule>(true);
+    c->name = "SingleAgentModule3";
 }

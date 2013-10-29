@@ -31,6 +31,9 @@
 
 namespace opencog
 {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
 
 /**
  * Implements an integer index as an RB-tree (C++ set) That is, given
@@ -41,7 +44,7 @@ namespace opencog
  * to much to try to return in some temporary array.  Iterating is much
  * safer.
  *
- * XXX TODO The iterator is NOT thread-safe against the insertion or
+ * @todo The iterator is NOT thread-safe against the insertion or
  * removal of atoms!  Either inserting or removing an atom will cause
  * the iterator references to be freed, leading to mystery crashes!
  */
@@ -52,8 +55,8 @@ class TypeIndex:
 		size_t num_types;
 	public:
 		TypeIndex(void);
-		void insertAtom(const Atom*);
-		void removeAtom(const Atom*);
+		void insertAtom(AtomPtr);
+		void removeAtom(AtomPtr);
 		void resize(void);
 
 		class iterator
@@ -71,16 +74,17 @@ class TypeIndex:
 			private:
 				Type type;
 				bool subclass;
-				std::vector<UnorderedHandleSet>::const_iterator s;
-				std::vector<UnorderedHandleSet>::const_iterator send;
+				std::vector<UnorderedUUIDSet>::const_iterator s;
+				std::vector<UnorderedUUIDSet>::const_iterator send;
 				Type currtype;
-				UnorderedHandleSet::const_iterator se;
+				UnorderedUUIDSet::const_iterator se;
 		};
 
 		iterator begin(Type, bool) const;
 		iterator end(void) const;
 };
 
+/** @}*/
 } //namespace opencog
 
 #endif // _OPENCOG_TYPEINDEX_H

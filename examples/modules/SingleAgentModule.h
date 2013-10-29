@@ -36,8 +36,12 @@ namespace opencog
 
 class CogServer;
 
+class SingleAgentModule;
+typedef std::shared_ptr<SingleAgentModule> SingleAgentModulePtr;
+
 class SingleAgentModule : public Agent, public Module
 {
+    static SingleAgentModulePtr a,b,c;
 public:
 
     virtual const ClassInfo& classinfo() const { return info(); }
@@ -51,14 +55,17 @@ public:
         return _factory;
     }
 
-    SingleAgentModule();
-    ~SingleAgentModule();
-    void run(CogServer*);
-    void init();
+    SingleAgentModule(CogServer&);
+    virtual ~SingleAgentModule();
+    virtual void run();
+    virtual void init();
+
+    void stopAgent();
 
     std::string name;
 
 }; // class
+
 
 } // namespace opencog
 

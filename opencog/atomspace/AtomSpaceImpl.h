@@ -30,7 +30,6 @@
 #include <set>
 #include <vector>
 
-#include <boost/scoped_ptr.hpp>
 #include <boost/signal.hpp>
 
 #include <opencog/atomspace/AtomTable.h>
@@ -44,31 +43,20 @@
 
 namespace opencog
 {
+/** \addtogroup grp_atomspace
+ *  @{
+ */
 
 class AtomSpaceImpl;
 
-typedef boost::signal<void (AtomSpaceImpl*,Handle)> AtomSignal;
-
 /** 
- * WARNING: The AtomSpaceImpl class contains methods that are only to be called by
+ * \warning The AtomSpaceImpl class contains methods that are only to be called by
  * AtomSpace requests that are running within the AtomSpaceAsync event loop.
  */
 class AtomSpaceImpl
 {
     friend class SavingLoading;
     friend class SaveRequest;
-
-    /**
-     * Used to fetch atoms from disk.
-     */
-    BackingStore *backing_store;
-
-    /** Provided signals */
-    AtomSignal _addAtomSignal;
-    AtomSignal _removeAtomSignal;
-    AtomSignal _mergeAtomSignal;
-
-    AttentionBank bank;
 
 public:
     AtomSpaceImpl(void);
@@ -142,7 +130,7 @@ public:
      *  @param tvn   Optional TruthValue of the node. If not provided, uses the
      *  DEFAULT_TV (see TruthValue.h)
      */
-    Handle addNode(Type t, const std::string& name = "", const TruthValue& tvn = TruthValue::DEFAULT_TV());
+    Handle addNode(Type t, const std::string& name = "", TruthValuePtr tvn = TruthValue::DEFAULT_TV());
 
     /**
      * Add a new link to the Atom Table
@@ -155,42 +143,23 @@ public:
      *                  provided, uses the DEFAULT_TV (see TruthValue.h)
      */
     Handle addLink(Type t, const HandleSeq& outgoing,
-                   const TruthValue& tvn = TruthValue::DEFAULT_TV());
-
-    /**
-     * DEPRECATED!
-     *
-     * Add an atom an optional TruthValue object to the Atom Table
-     * This is a deprecated function; do not use it in new code,
-     * if at all possible.
-     *
-     * @param atom the handle of the Atom to be added
-     * @param tvn the TruthValue object to be associated to the added
-     *        atom. NULL if the own atom's tv must be used.
-     * @deprecated This is a legacy code left-over from when one could
-     * have non-real atoms, i.e. those whose handles were
-     * less than 500, and indicated types, not atoms.
-     * Instead of using that method, one should use
-     * addNode or addLink (which is a bit faster too).
-     */
-    Handle addRealAtom(const Atom& atom,
-                       const TruthValue& tvn = TruthValue::NULL_TV());
+                   TruthValuePtr tvn = TruthValue::DEFAULT_TV());
 
     /**
      * Removes an atom from the atomspace
      *
      * @param h The Handle of the atom to be removed.
-     * @param recursive Recursive-removal flag; if set, the links in the
-     *        incoming set of the atom to be removed will also be
-     *        removed.
+     * @param recursive Recursive-removal flag; the removal will
+     *       fail if this flag is not set, and the atom has incoming
+     *       links (that are in the atomspace).  Set to false only if
+     *       you can guarantee that this atom does not appear in the
+     *       outgoing set of any link in the atomspace.
      * @return True if the Atom for the given Handle was successfully
      *         removed. False, otherwise.
-     *
-     * When the atom is removed from the atomspace, all memory associated
-     * with it is also deleted; in particular, the atom is removed from
-     * the TLB as well, so that future TLB lookups will be invalid. 
      */
-    bool removeAtom(Handle h, bool recursive = false);
+    bool removeAtom(Handle h, bool recursive = true) {
+        return 0 < atomTable.extract(h, recursive).size();
+    }
 
     /**
      * Retrieve from the Atom Table the Handle of a given node
@@ -199,7 +168,7 @@ public:
      * @param str   Name of the node
     */
     Handle getHandle(Type t, const std::string& str) const
-        { return atomTable.getHandle(str.c_str(), t); }
+        { return atomTable.getHandle(t, str); }
 
     /**
      * Retrieve from the Atom Table the Handle of a given link
@@ -210,35 +179,36 @@ public:
     Handle getHandle(Type t, const HandleSeq& outgoing) const
         { return atomTable.getHandle(t, outgoing); }
 
-    /** Get the atom referred to by Handle h represented as a string. */
-    std::string atomAsString(Handle h, bool terse = true) const;
-
     /** Retrieve the name of a given Handle */
     const std::string& getName(Handle h) const
     {
         static std::string emptyName;
-        Node* nnn = atomTable.getNode(h);
+        NodePtr nnn(NodeCast(h));
         if (nnn) return nnn->getName();
         return emptyName;
     }
 
     /** Retrieve the outgoing set of a given link */
-    const HandleSeq& getOutgoing(Handle h) const
+    const HandleSeq getOutgoing(Handle h) const
     {
         static HandleSeq hs;
-        Link* link = atomTable.getLink(h);
+        LinkPtr link(LinkCast(h));
         if (link) return link->getOutgoingSet();
         return hs;
     }
 
     /** Retrieve a single Handle from the outgoing set of a given link */
     Handle getOutgoing(Handle h, int idx) const
-        { return getOutgoing(h)[idx]; }
+    {
+        LinkPtr link(LinkCast(h));
+        if (link) return link->getOutgoingAtom(idx);
+        return Handle::UNDEFINED;
+    }
 
     /** Retrieve the arity of a given link */
     size_t getArity(Handle h) const
     {
-        Link* link = atomTable.getLink(h);
+        LinkPtr link(LinkCast(h));
         if (link) return link->getArity();
         return 0;
     }
@@ -246,8 +216,7 @@ public:
     /** Retrieve the type of a given Handle */
     Type getType(Handle h) const
     {
-        Atom* a = atomTable.getAtom(h);
-        if (a) return a->getType();
+        if (h) return h->getType();
         else return NOTYPE;
     }
 
@@ -256,7 +225,7 @@ public:
      */ 
     bool isSource(Handle source, Handle link) const
     {
-        const Link *l = atomTable.getLink(link);
+        LinkPtr l(LinkCast(link));
         if (l) return l->isSource(source);
         return false;
     }
@@ -265,25 +234,25 @@ public:
     HandleSeq getIncoming(Handle);
 
     /** Convenience functions... */
-    bool isNode(const Handle& h) const
+    bool isNode(Handle h) const
         { return classserver().isA(getType(h), NODE); }
 
-    bool isLink(const Handle& h) const
+    bool isLink(Handle h) const
         { return classserver().isA(getType(h), LINK); }
 
     /** Retrieve the TruthValue of a given Handle */
-    const TruthValue& getTV(Handle, VersionHandle = NULL_VERSION_HANDLE) const;
+    TruthValuePtr getTV(Handle, VersionHandle = NULL_VERSION_HANDLE) const;
 
     /** Change the TruthValue of a given Handle
      * @return whether TV was successfully set
      */
-    bool setTV(Handle, const TruthValue&, VersionHandle = NULL_VERSION_HANDLE);
+    bool setTV(Handle, TruthValuePtr, VersionHandle = NULL_VERSION_HANDLE);
 
     /** Change the primary TV's mean of a given Handle */
     void setMean(Handle, float mean) throw (InvalidParamException);
 
     /** Retrieve the doubly normalised Short-Term Importance between -1..1
-     * for a given AttentionValueHolder. STI above and below threshold
+     * for a given AttentionValue. STI above and below threshold
      * normalised separately and linearly.
      *
      * @param h The attention value holder to get STI for
@@ -293,10 +262,10 @@ public:
      * range can be return if average=true
      * @return normalised STI between -1..1
      */
-    float getNormalisedSTI(AttentionValueHolder *avh, bool average=true, bool clip=false) const;
+    float getNormalisedSTI(AttentionValuePtr avh, bool average=true, bool clip=false) const;
 
     /** Retrieve the linearly normalised Short-Term Importance between 0..1
-     * for a given AttentionValueHolder.
+     * for a given AttentionValue.
      *
      * @param h The attention value holder to get STI for
      * @param average Should the recent average max/min STI be used, or the
@@ -305,109 +274,79 @@ public:
      * range can be return if average=true
      * @return normalised STI between 0..1
      */
-    float getNormalisedZeroToOneSTI(AttentionValueHolder *avh, bool average=true, bool clip=false) const;
-
-    /** Retrieve the Long-term Importance of a given AttentionValueHolder */
-    AttentionValue::lti_t getLTI(AttentionValueHolder *avh) const;
-
-    /** Retrieve the Very-Long-Term Importance of a given
-     * AttentionValueHolder */
-    AttentionValue::vlti_t getVLTI(AttentionValueHolder *avh) const;
+    float getNormalisedZeroToOneSTI(AttentionValuePtr avh, bool average=true, bool clip=false) const;
 
     /** Retrieve the AttentionValue of a given Handle */
-    const AttentionValue& getAV(Handle h) const {
-        return bank.getAV(atomTable.getAtom(h));
+    AttentionValuePtr getAV(Handle h) const {
+        return h->getAttentionValue();
     }
 
     /** Change the AttentionValue of a given Handle */
-    void setAV(Handle h, const AttentionValue &av) {
-        bank.setAV(atomTable.getAtom(h), av);
+    void setAV(Handle h, AttentionValuePtr av) {
+        h->setAttentionValue(av);
     }
 
     /** Change the Short-Term Importance of a given Handle */
     void setSTI(Handle h, AttentionValue::sti_t stiValue) {
-        bank.setSTI(atomTable.getAtom(h), stiValue);
+        /* Make a copy */
+        AttentionValuePtr old_av = h->getAttentionValue();
+        AttentionValuePtr new_av = createAV(
+            stiValue,
+            old_av->getLTI(),
+            old_av->getVLTI());
+        h->setAttentionValue(new_av);
     }
 
     /** Change the Long-term Importance of a given Handle */
     void setLTI(Handle h, AttentionValue::lti_t ltiValue) {
-        bank.setLTI(atomTable.getAtom(h), ltiValue);
+        AttentionValuePtr old_av = h->getAttentionValue();
+        AttentionValuePtr new_av = createAV(
+            old_av->getSTI(),
+            ltiValue,
+            old_av->getVLTI());
+        h->setAttentionValue(new_av);
     }
 
     /** Increase the Very-Long-Term Importance of a given Handle by 1 */
     void incVLTI(Handle h) {
-        bank.incVLTI(atomTable.getAtom(h));
+        AttentionValuePtr old_av = h->getAttentionValue();
+        AttentionValuePtr new_av = createAV(
+            old_av->getSTI(),
+            old_av->getLTI(),
+            old_av->getVLTI() + 1);
+        h->setAttentionValue(new_av);
     }
 
     /** Decrease the Very-Long-Term Importance of a given Handle by 1 */
     void decVLTI(Handle h) {
-        bank.decVLTI(atomTable.getAtom(h));
+        AttentionValuePtr old_av = h->getAttentionValue();
+        //we only want to decrement the vlti if it's not already disposable.
+        if (old_av->getVLTI() == AttentionValue::DISPOSABLE) return;
+        AttentionValuePtr new_av = createAV(
+            old_av->getSTI(),
+            old_av->getLTI(),
+            old_av->getVLTI() - 1);
+        h->setAttentionValue(new_av);
     }
 
     /** Retrieve the Short-Term Importance of a given Handle */
     AttentionValue::sti_t getSTI(Handle h) const {
-        return bank.getSTI(atomTable.getAtom(h));
-    }
-
-    /** Retrieve the doubly normalised Short-Term Importance between -1..1
-     * for a given Handle. STI above and below threshold normalised separately
-     * and linearly.
-     *
-     * @param h The atom handle to get STI for
-     * @param average Should the recent average max/min STI be used, or the
-     * exact min/max?
-     * @param clip Should the returned value be clipped to -1..1? Outside this
-     * range can be return if average=true
-     * @return normalised STI between -1..1
-     */
-    float getNormalisedSTI(Handle h, bool average=true, bool clip=false) const {
-        return getNormalisedSTI(atomTable.getAtom(h), average, clip);
-    }
-
-    /** Retrieve the linearly normalised Short-Term Importance between 0..1
-     * for a given Handle.
-     *
-     * @param h The atom handle to get STI for
-     * @param average Should the recent average max/min STI be used, or the
-     * exact min/max?
-     * @param clip Should the returned value be clipped to 0..1? Outside this
-     * range can be return if average=true
-     * @return normalised STI between 0..1
-     */
-    float getNormalisedZeroToOneSTI(Handle h, bool average=true, bool clip=false) const {
-        return getNormalisedZeroToOneSTI(atomTable.getAtom(h), average, clip);
+        return h->getAttentionValue()->getSTI();
     }
 
     /** Retrieve the Long-term Importance of a given Handle */
     AttentionValue::lti_t getLTI(Handle h) const {
-        return bank.getLTI(atomTable.getAtom(h));
+        return h->getAttentionValue()->getLTI();
     }
 
     /** Retrieve the Very-Long-Term Importance of a given Handle */
     AttentionValue::vlti_t getVLTI(Handle h) const {
-        return bank.getVLTI(atomTable.getAtom(h));
+        return h->getAttentionValue()->getVLTI();
     }
 
-    /** Clone an atom from the AtomSpace.
-     * Threads outside of the AtomSpace thread can safely use this pointer and modify
-     * the atom.
-     * @param h Handle of atom to clone
-     * @return A smart pointer to the atom
-     * @note Any changes to the atom object must be committed using
-     * AtomSpace::commitAtom for them to be merged with the AtomSpace.
-     * Otherwise changes are lost.
-     */
-    boost::shared_ptr<Atom> cloneAtom(const Handle& h) const;
-
-    /** Commit an atom that has been cloned from the AtomSpace.
-     *
-     * @param a Atom to commit
-     * @return whether the commit was successful
-     */
-    bool commitAtom(const Atom& a);
-
-    bool isValidHandle(const Handle h) const
-        { return atomTable.holds(h); }
+    bool isValidHandle(Handle h) const {
+        return atomTable.holds(h);
+    }
 
     /**
      * Returns neighboring atoms, following links and returning their
@@ -883,8 +822,8 @@ public:
         const AtomTable* table;
         compareAtom(const AtomTable* _table, Compare* _c) : c(_c), table(_table) {}
 
-        bool operator()(const Handle& h1,const Handle& h2) {
-            return (*c)(*table->getAtom(h1),*table->getAtom(h2));
+        bool operator()(Handle h1, Handle h2) {
+            return (*c)(h1, h2);
         }
     };
 
@@ -895,7 +834,7 @@ public:
         filterAtom(const AtomTable* _table, Compare *_c) : c(_c), table(_table) {}
 
         bool operator()(const Handle& h1) {
-            return (*c)(*table->getAtom(h1));
+            return (*c)(h1);
         }
     };
 
@@ -940,7 +879,7 @@ public:
      * Deprecated, importance updating should be done by ImportanceUpdating
      * Agent. Still used by Embodiment.
      */
-    void decayShortTermImportance();
+    void decayShortTermImportance() { atomTable.decayShortTermImportance(); }
 
     size_t Nodes(VersionHandle = NULL_VERSION_HANDLE) const;
     size_t Links(VersionHandle = NULL_VERSION_HANDLE) const;
@@ -999,8 +938,8 @@ public:
     struct STIAboveThreshold : public AtomPredicate {
         STIAboveThreshold(const AttentionValue::sti_t t) : threshold (t) {}
 
-        virtual bool test(const Atom& a) {
-            return a.getAttentionValue().getSTI() > threshold;
+        virtual bool test(AtomPtr a) {
+            return a->getAttentionValue()->getSTI() > threshold;
         }
         AttentionValue::sti_t threshold;
     };
@@ -1008,30 +947,21 @@ public:
     struct LTIAboveThreshold : public AtomPredicate {
         LTIAboveThreshold(const AttentionValue::lti_t t) : threshold (t) {}
 
-        virtual bool test(const Atom& a) {
-            return a.getAttentionValue().getLTI() > threshold;
+        virtual bool test(AtomPtr a) {
+            return a->getAttentionValue()->getLTI() > threshold;
         }
         AttentionValue::lti_t threshold;
     };
 
-    // AtomSpaceRequests are not allowed to access the TLB, but they may get
-    // references to specific atoms.
-    inline const Atom& getAtom(Handle h) {
-        return *atomTable.getAtom(h);
-    }
-
 private:
 
     AtomTable atomTable;
+    AttentionBank bank;
 
-    /** The AtomSpace currently acts like event loop, but some legacy code (such as
-     * saving/loading) might not like the AtomSpace changing while acting upon
-     * it. Those that absolutely require it can get a lock to halt the event loop.
-     * @warn This should only be used as a last resort, you need to add your
-     * class as a friend class to the AtomSpace, and there is no
-     * guarantee this will be available in the future.
+    /**
+     * Used to fetch atoms from disk.
      */
-    mutable pthread_mutex_t atomSpaceLock;
+    BackingStore *backing_store;
 
     /**
      * signal connections used to keep track of atom removal in the AtomTable
@@ -1039,48 +969,18 @@ private:
     boost::signals::connection removedAtomConnection; 
     boost::signals::connection addedAtomConnection; 
 
-    /* Boundary at which an atom is considered within the attentional
-     * focus of opencog. Atom's with STI less than this value are
-     * not charged STI rent */
-    AttentionValue::sti_t attentionalFocusBoundary;
+    /** Handler for the 'atom removed' signal */
+    void atomRemoved(AtomPtr);
 
-    opencog::recent_val<AttentionValue::sti_t> maxSTI;
-    opencog::recent_val<AttentionValue::sti_t> minSTI;
-
-    /* These indicate the amount importance funds available in the
-     * AtomSpace */
-    long fundsSTI;
-    long fundsLTI;
-
-    /*
-     * Remove stimulus from atom, only should be used when Atom is deleted.
-     */
-    void removeStimulus(Handle h);
-
-    /**
-     * Creates the space map node, if not created yet.
-     * returns the handle of the node.
-     */
-    Handle getSpaceMapNode(void);
-
-    /**
-     * Handler of the 'atom removed' signal from self
-     */
-    void atomRemoved(AtomSpaceImpl*, Handle);
-
-    /**
-     * Handler of the 'atom added' signal from self
-     */
-    void atomAdded(AtomSpaceImpl*, Handle);
+    /** Handler for the 'atom added' signal */
+    void atomAdded(Handle);
 
 public:
     // pass on the signals from the Atom Table
-    AtomSignal& addAtomSignal()
-        { return _addAtomSignal; }
-    AtomSignal& removeAtomSignal()
-        { return _removeAtomSignal; }
-    AtomSignal& mergeAtomSignal()
-        { return _mergeAtomSignal; }
+    AtomSignal& addAtomSignal() { return atomTable._addAtomSignal; }
+    AtomPtrSignal& removeAtomSignal() { return atomTable._removeAtomSignal; }
+    TVCHSigl& TVChangedSignal() { return atomTable._TVChangedSignal; }
+    AVCHSigl& AVChangedSignal() { return atomTable._AVChangedSignal; }
 
     /**
      * Overrides and declares copy constructor and equals operator as private 
@@ -1090,6 +990,7 @@ public:
     AtomSpaceImpl(const AtomSpaceImpl&);
 };
 
+/** @}*/
 } // namespace opencog
 
 #endif // _OPENCOG_ATOMSPACE_IMPL_H
